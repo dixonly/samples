@@ -9,6 +9,7 @@ import atexit
 import argparse
 import subprocess
 import ssl
+import OpenSSL
 
 def parseParameters():
 
@@ -45,6 +46,9 @@ def parseParameters():
     parser.add_argument('-l', '--network',
                         required=False, nargs="*",
                         help="Destination network")
+    parser.add_argument('-f', '--vif',
+                        required=False,
+                        help="VIF when attaching to NVDS portgroup")
     parser.add_argument("-n", '--name',
             required = False,
             action='store',
@@ -77,7 +81,7 @@ def getObject(inv, vimtype, name, verbose=False):
             pass
     return obj
 
-def setupNetworks(vm, host, networks):
+def setupNetworks(vm, host, networks, vifs=None):
     # this requires vsphere 7 API
     nics = []
     for d in vm.config.hardware.device:
@@ -105,11 +109,17 @@ def setupNetworks(vm, host, networks):
             v.backing.opaqueNetworkId = n.summary.opaqueNetworkId
             v.backing.opaqueNetworkType = n.summary.opaqueNetworkType
 
+            print("Migrating VM %s NIC %d to destination network %s.." %(vm.name, i, v.backing.opaqueNetworkId))
             # fix issues with older versions of VC that cannot successfully clear VIF
             if not opaque:
                 if hasattr(v, 'externalId') and v.externalId:
                     print("resetting vif")
                     v.externalId = None
+
+            if vifs:
+                v.externalId = vifs[i]
+                print("...with vif %s" %v.externalId)
+                
                 
         elif isinstance(n, vim.DistributedVirtualPortgroup):
             # create dvpg handling
@@ -118,6 +128,11 @@ def setupNetworks(vm, host, networks):
             vdsPgConn.switchUuid = n.config.distributedVirtualSwitch.uuid
             v.backing = vim.vm.device.VirtualEthernetCard.DistributedVirtualPortBackingInfo()
             v.backing.port = vdsPgConn
+            print("Migrating VM %s NIC %d to destination dvpg %s on switch %s...." %(vm.name, i, vdsPgConn.portgroupKey, vdsPgConn.switchUuid))
+            if vifs:
+                v.externalId = vifs[i]
+                print("...with vif %s" %v.externalId)
+
         else:
             v.backing = vim.vm.device.VirtualEthernetCard.NetworkBackingInfo()
             v.backing.network = n
@@ -181,10 +196,15 @@ def main():
             print("XV Vmotion requires host, cluster, datastore, and network")
             return None
 
+        cert = ssl.get_server_certificate((args.destvc, 443))
+        x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
+        thumbprint = x509.digest("SHA1").decode('utf-8')
+        
         up = vim.ServiceLocator.NamePassword(username=args.user, password=password)
         sl = vim.ServiceLocator(credential=up,
                                 instanceUuid=dinv.about.instanceUuid,
-                                url="https://%s" % args.destvc)
+                                url="https://%s" % args.destvc,
+                                sslThumbprint=thumbprint)
         relocSpec.service = sl
 
     vm = getObject(sinv, [vim.VirtualMachine], args.name, verbose=False)
@@ -221,11 +241,14 @@ def main():
                       %cluster.name)
                 return
 
-            if not host and cluster.resourcePool == vm.resourcePool:
+            if not host and cluster.resourcePool == vm.resourcePool and sinv == dinv:
                 print("Must provide host when migrating within same cluster")
                 return
 
             if not host:
+                if (sinv != dinv):
+                    print("Cross VC migration must specify a host")
+                    return
                 rhost = cluster.RecommendHostsForVm(vm=vm, pool=cluster.resourcePool)
                 if len(rhost) == 0:
                     print("No hosts found in cluster %s from DRS recommendation for migration"
