@@ -1,11 +1,14 @@
 vmotion.py
+
    Demonstrates how to migrate VMs from and to NSX-T networks
    - Supports migration of VM using vSphere vmotion
    - Migrate VMs from within the same or different VCs, with or without 
      enhanced linked mode
    - Supports NSX-T networks
    
-updateDfwFilters.py   
+   
+updateDfwFilters.py  
+
    Retrieve and the DFW filter version for VM vnics on hosts.
    When upgrading between NSX-V versions, the DFW filter version that's 
    applied to each vNIC is not automatically updated to the newest version.
