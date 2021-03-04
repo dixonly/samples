@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Disclaimer: This product is not supported by VMware. Use at your own risk.
+#          
+# License: https://github.com/vmware/pyvmomi-community-samples/blob/master/LICENSE
+'''
+  This script will connect to venter and retrieve hosts for all clusters or 
+  a specific cluster.  It'll then retrieve the vNICs for every VM and print
+  out the current DFW dvfilter version.  If specified, the script can also
+  update the dvfilter version to a new one.
+
+  The script will automatically enable and then disable the SSH service for the host.  
+  If SSH service is already enabled, re-enabling is harmless.  If you do not want 
+  the SSH service to be disabled afterwards, comment out the line for invoking
+  disableSShOnHost().
+'''
 from pyVim import connect
 from pyVmomi import vim
 from pyVmomi import vmodl
@@ -125,7 +139,7 @@ def getSetFilterVersion(ssh, vms, change=False, ver = 1000):
             if reObj:
                 version = int(reObj.group(1))
                 print("   %s: %s" %(n, reObj.group(1)))
-                if change and version != ver:
+                if change and version < ver:
                     print("   Changing to version %d" %ver)
                     stdin,stdout,stderr=ssh.exec_command('vsipioctl setexportversion -f %s -e %d'
                             % (n, ver))
