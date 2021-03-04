@@ -4,6 +4,7 @@ vmotion.py
    - Migrate VMs from within the same or different VCs, with or without 
      enhanced linked mode
    - Supports NSX-T networks
+   
 updateDfwFilters.py   
    Retrieve and the DFW filter version for VM vnics on hosts.
    When upgrading between NSX-V versions, the DFW filter version that's 
@@ -15,8 +16,8 @@ updateDfwFilters.py
    Note that the source NSX-V version must be 6.4.4 or newer to support
    filter version 1000.
  
-   -By default, connect to VC and print out the current DFW filter version 
+   - By default, connect to VC and print out the current DFW filter version 
     of all vNICs in all clusters
-        -scope can be limited to a specific cluster
-   -Can also update all DFW filter versions to a specified version
+   - scope can be limited to a specific cluster
+   - Can also update all DFW filter versions to a specified version
   
