@@ -24,3 +24,12 @@ updateDfwFilters.py
    - scope can be limited to a specific cluster
    - Can also update all DFW filter versions to a specified version
   
+getVmInstanceId.py
+   Connect to VCenter and retrieve all the VM instance UUIDs
+   and output a payload that's compatible with the NSX-T
+   VM group migration API POST /api/v1/migration/vmgroup?action=pre_migrate.
+   For NSX-V to NSX-T migration, if your NSX-V DFW 
+   configurations use any apply-to based on dynamic security
+   groups based on VMs, the Migration Coordinator will precreate
+   apply-to definitions based on VIFs.  The API will help pre-create
+   segment ports with VIFs based on the VM instance UUIDs.
