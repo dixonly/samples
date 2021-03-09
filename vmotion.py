@@ -45,10 +45,13 @@ def parseParameters():
                         help="Destination datastore volume")
     parser.add_argument('-l', '--network',
                         required=False, nargs="*",
-                        help="Destination network")
-    parser.add_argument('-f', '--vif',
+                        help="Destination network, must match number of VM vNICs in VM's HW ordering")
+    parser.add_argument('-f', '--vifs',
                         required=False,
-                        help="VIF when attaching to NVDS portgroup")
+                        help="VIF when attaching to NVDS portgroup, must match number of VM vNICs in order")
+    parser.add_argument('--autovif',
+                        action="store_true",
+                        help="Automatically use vm Instance UUID to specify VIF, do not use --vif")
     parser.add_argument("-n", '--name',
             required = False,
             action='store',
@@ -81,16 +84,23 @@ def getObject(inv, vimtype, name, verbose=False):
             pass
     return obj
 
-def setupNetworks(vm, host, networks, vifs=None):
+def setupNetworks(vm, host, networks, vifs=None, autovif=False):
     # this requires vsphere 7 API
     nics = []
+    keys = []
+    vmId = vm.config.instanceUuid
     for d in vm.config.hardware.device:
         if isinstance(d, vim.vm.device.VirtualEthernetCard):
             nics.append(d)
+            keys.append(d.key)
 
 
     if len(nics) > len(networks):
         print("not enough networks for %d nics on vm" %len(nics))
+        return None
+
+    if vifs and len(vifs) != len(nics):
+        print("Number of VIFs must match number of vNICS")
         return None
 
     netdevs = []
@@ -110,15 +120,12 @@ def setupNetworks(vm, host, networks, vifs=None):
             v.backing.opaqueNetworkType = n.summary.opaqueNetworkType
 
             print("Migrating VM %s NIC %d to destination network %s.." %(vm.name, i, v.backing.opaqueNetworkId))
-            # fix issues with older versions of VC that cannot successfully clear VIF
-            if not opaque:
-                if hasattr(v, 'externalId') and v.externalId:
-                    print("resetting vif")
-                    v.externalId = None
-
             if vifs:
                 v.externalId = vifs[i]
                 print("...with vif %s" %v.externalId)
+            elif autovif:
+                v.externalId = "%s:%s" % (vmId, keys[i])
+                
                 
                 
         elif isinstance(n, vim.DistributedVirtualPortgroup):
@@ -132,6 +139,8 @@ def setupNetworks(vm, host, networks, vifs=None):
             if vifs:
                 v.externalId = vifs[i]
                 print("...with vif %s" %v.externalId)
+            elif autovif:
+                v.externalId = "%s:%s" %(vmId, keys[i])
 
         else:
             v.backing = vim.vm.device.VirtualEthernetCard.NetworkBackingInfo()
@@ -284,7 +293,7 @@ def main():
             print("Destination network %s found." % network.name)
             networks.append(network)
 
-    netSpec=setupNetworks(vm, host, networks)
+    netSpec=setupNetworks(vm, host, networks, vifs=args.vifs, autovif=args.autovif)
     relocSpec.deviceChange = netSpec
     print("Initiating migration of VM %s" %args.name)
     vm.RelocateVM_Task(spec=relocSpec, priority=vim.VirtualMachine.MovePriority.highPriority)
