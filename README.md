@@ -33,3 +33,40 @@ getVmInstanceId.py
    groups based on VMs, the Migration Coordinator will precreate
    apply-to definitions based on VIFs.  The API will help pre-create
    segment ports with VIFs based on the VM instance UUIDs.
+
+
+getdfw.py
+   Connects to NSX-T Manager and retrieves the running config for:
+   - Groups
+   - Services
+   - VMs
+   - DFW Policies and Rules
+
+
+v2tdfw_check.py
+   When the NSX V2T migration coordinator completes translating the
+   NSX-V configuration, it'll store temporary the imported data and
+   transient translations in /var/log/migration-coordinator/v2t/storage.json
+   and /var/log/migration-coordinator/v2t/api.json.
+
+   This script will take compare the temporary data to the data
+   retrieved via the getdfw.py script.  The comparison will produce
+   output detailing any changes made to the translated groups,
+   services, VM inventory and tags, and DFW policies and rules.
+
+   When to use this script?
+   - A user could have made changes to the target NSX-T configurations
+     that unexpectedly changed the DFW security posture in an
+     unexpected way.  The script will report what has been changed
+   - New changes were made to the NSX-V configuration after the initial
+     configuration was imported to the migration coordinator.  Because
+     the MC will only import the config once, these new changes would
+     not be included in the migration.  The config import and translation
+     stages of the MC do not make any changes to the target NSX-T
+     instance, you could re-run the MC to re-import and translate the
+     configs again.  You can then compare the new api.json and storage.json
+     to the running NSX-T config to determine the list of changes
+     that need to be rectified.
+
+
+     
