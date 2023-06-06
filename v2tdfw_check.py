@@ -448,19 +448,20 @@ def compareVMTags(data):
         e={}
         e['id'] = v
         e['name'] = importTags[v]['source_name']
-        e['source'] = None
-        e['target'] = None
+        e['source'] = []
+        e['target'] = []
         e['error'] = []
         for t in data['vms']['results']:
             if v == t['external_id']:
                 vm = t
                 if importTags[v]['source_name'] != vm['display_name']:
-                    e['error'] = "NSXV name %s different than in T: %s"%(importTags[v]['source_name'], vm['display_name'])
+                    e['error'].append("NSXV name %s different than in T: %s"%(importTags[v]['source_name'], vm['display_name']))
                 found = True
                 if 'tags' in importTags[v]['body']:
                     if len(importTags[v]['body']['tags']) > 0:
                         if 'tags' not in vm:
                             e['error'].append("VM in target missing tags %s" %e['name'])
+                            e['source'].append(json.dumps(importTags[v]['body']['tags']))
                         else:
                             found=True
                             break
@@ -468,14 +469,15 @@ def compareVMTags(data):
                                   vm['tags']):
                     e = {}
                     e['error'].append("tag diff")
-                    e['source'] = importTags[v]['body']['tags']
-                    e['target'] = vm['tags']
+                    e['source'].append(json.dumps(importTags[v]['body']['tags']))
+                    e['target'].append(json.dumps( vm['tags']))
                     errors.append(e)
                     break
                 if not found:
                     e['error'].append("Tag Missing in target: %s" %(importTags[v]['source_name']))
-                    e['source'] = []
-                    e['target'] = []
+                    e['source'] = importTags[v]['body']['tags']
+                    if 'tags' in vm.keys():
+                        e['target'].append(json.dumps(vm['tags']))
         if len(e['error']) > 0:
             errors.append(e)
     return errors
@@ -487,58 +489,58 @@ def compareServices(src, dst):
     errors = []
     
     for s in src:
-        found=None
+        sfound=None
         e={}
         e['service'] = s['url']
         e['error'] = []
         if not s['body']:
             continue
-        if not 'tags' in s:
+        if not 'tags' in s['body']:
+            print("Service has no tags")
             continue
-        for stag in s['body']:
+        for stag in s['body']['tags']:
             if stag['scope'] == 'v_origin':
                 stagv = stag['tag']
-                break
-        for tgt in dst:
-            '''
-            if s['url'] == tgt['path']:
-                found=tgt
-                break
-            '''
-            if not 'tags' in tgt:
-                continue
-            for dtag in tgt['tags']:
-                if dtag['scope'] == 'v_origin':
-                    if dtag['tag'] == stagv:
-                        found=tgt
-                        break
-        if not found:
-            e['error'].append("missing service")
-            errors.append(e)
-            continue
-        else:
-            b=s['body']
-            t = found
-            if len(b['service_entries']) != len(t['service_entries']):
-                print(json.dumps(b, indent=4))
-                print(json.dumps(t, indent=4))
-                exit()
-                e['error'].append('LENGTH source: %d, target: %d - source: %s target: %s'
-                                   %(len(b['service_entries']),
-                                     len(t['service_entries']),
-                                     json.dumps(b['service_entries'], indent=4),
-                                     json.dumps(t['service_entries'], indent=4)))
-            for se in b['service_entries']:
-                seFound=False
-                for de in t['service_entries']:
-                    if de['resource_type'] == se['resource_type']:
-                        if ('l4_protocol' in de.keys() and de['l4_protocol'] == se['l4_protocol']) or ('alg' in de.keys() and de['alg'] == se['alg']):
-                            if sorted(de['source_ports']) == sorted(se['source_ports']):
-                                if sorted(de['destination_ports']) == sorted(se['destination_ports']):
-                                    seFound=True
-                                    break
-                if not seFound:
-                    e['error'].append("Service Entry not found: %s in target"% json.dumps(se))
+            found=None
+            for tgt in dst:
+                if tgt['path'] == s['url']:
+                    found=tgt
+                    break
+                if not 'tags' in tgt:
+                    continue
+                for dtag in tgt['tags']:
+                    if dtag['scope'] == 'v_origin':
+                        if dtag['tag'] == stagv:
+                            found=tgt
+                            break
+                if found:
+                    break
+            if not found:
+                e['error'].append("missing service")
+
+            else:
+                b=s['body']
+                t = found
+                if len(b['service_entries']) != len(t['service_entries']):
+                    print(json.dumps(b, indent=4))
+                    print(json.dumps(t, indent=4))
+                    exit()
+                    e['error'].append('LENGTH source: %d, target: %d - source: %s target: %s'
+                                      %(len(b['service_entries']),
+                                        len(t['service_entries']),
+                                        json.dumps(b['service_entries'], indent=4),
+                                        json.dumps(t['service_entries'], indent=4)))
+                    for se in b['service_entries']:
+                        seFound=False
+                        for de in t['service_entries']:
+                            if de['resource_type'] == se['resource_type']:
+                                if ('l4_protocol' in de.keys() and de['l4_protocol'] == se['l4_protocol']) or ('alg' in de.keys() and de['alg'] == se['alg']):
+                                    if sorted(de['source_ports']) == sorted(se['source_ports']):
+                                        if sorted(de['destination_ports']) == sorted(se['destination_ports']):
+                                            seFound=True
+                                            break
+                        if not seFound:
+                            e['error'].append("Service Entry not found: %s in target"% json.dumps(se))
         if e['error']:
             errors.append(e)
 
@@ -623,9 +625,9 @@ def main():
     vmTags = compareVMTags(inputData)
     for i in vmTags:
         print("%s - %s" % (i['id'], i['error']))
-        if i['source'] or i['target']:
-            print("  source: %s" %(json.dumps(i['source'])))
-            print("  target: %s" %(json.dumps(i['target'])))
+        #if i['source'] or i['target']:
+        print("  source: %s" %(json.dumps(i['source'])))
+        print("  target: %s" %(json.dumps(i['target'])))
 
     # DFW policies
     policies=[]
