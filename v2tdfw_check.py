@@ -341,7 +341,7 @@ def getData(args):
     data['rules'] = target['rules']
     data['groups'] = target['groups']
     data['policies'] = target['policies']['results']
-
+    data['ctxprofiles'] = target['ctxprofiles']
     return data
 
 
@@ -482,7 +482,76 @@ def compareVMTags(data):
             errors.append(e)
     return errors
             
-        
+def compareCtxProfiles(src, dst):
+    errors = []
+    for s in src:
+        sfound = None
+        e={}
+        e['profile'] = s['url']
+        e['error'] = []
+        if not s['body']:
+            continue
+        if not 'tags' in s['body']:
+            print("CTX Profile has no tags")
+            continue
+
+        for stag in s['body']['tags']:
+            if stag['scope'] == 'v_origin':
+                stagv = stag['tag']
+            found=None
+            for tgt in dst:
+                if tgt['path'] == s['url']:
+                    found = tgt
+                    break
+                if not 'tags' in tgt:
+                    continue
+                for dtag in tgt['tags']:
+                    if dtag['scope'] == 'v_origin':
+                        if dtag['tag'] == stagv:
+                            found=tgt
+                            break
+            if found:
+                break
+            if not found:
+                e['error'].append("missing context profile")
+            else:
+                b=s['body']
+                t = found
+                if len(b['attributes']) != len(t['attributes']):
+                    e['error'].append("LENGTH source: %d, target: %d, source: %s, target: %s"
+                                      %(len(b['attributes']), len(t['attributes']),
+                                        json.dumps(b['attributes']),
+                                        json.dumps(t['attributes'])))
+                else:
+                    for a in b['attributes']:
+                        afound = False
+                        for d in t['attributes']:
+                            if a['key'] == d['key']:
+                                if a['datatype'] == d['datatype']:
+                                    if len(a['value']) == len(d['value']):
+                                        vFound=True
+                                        for v in a['value']:
+                                            if v not in d['value']:
+                                                vFound=False
+                                                break
+                                        if not vFound:
+                                            e['error'].append("CTX Profile attribute vlaue not the same.  Source: %s target: %s"
+                                                              % (json.dumps(a['value']),
+                                                                 json.dumps(d['value'])))
+                                            break
+                                        else:
+                                            afound = True
+                                            break
+                        if not afound:
+                            e['error'].append("unmatched attribute: %s" %(json.dumps(a)))
+
+        if e['error']:
+            errors.append(e)
+    return errors
+
+                                        
+                
+                    
                
         
 def compareServices(src, dst):
@@ -522,14 +591,12 @@ def compareServices(src, dst):
                 b=s['body']
                 t = found
                 if len(b['service_entries']) != len(t['service_entries']):
-                    print(json.dumps(b, indent=4))
-                    print(json.dumps(t, indent=4))
-                    exit()
                     e['error'].append('LENGTH source: %d, target: %d - source: %s target: %s'
                                       %(len(b['service_entries']),
                                         len(t['service_entries']),
                                         json.dumps(b['service_entries'], indent=4),
                                         json.dumps(t['service_entries'], indent=4)))
+                else:
                     for se in b['service_entries']:
                         seFound=False
                         for de in t['service_entries']:
@@ -604,7 +671,8 @@ def main():
             missingGroups.append(error)
     print("***Group Validaton***")
     print(json.dumps(missingGroups, indent=4))
-            
+
+    
 
     # Check Services
     services=[]
@@ -618,7 +686,16 @@ def main():
     for i in svcErrors:
         print(json.dumps(i))
         
+    ctx = []
+    for cx in apiJson:
+        if 'infra/context-profiles' in cx['url']:
+            ctx.append(cx)
 
+    print("*** CTX Profiles ***")
+    tprofiles=inputData['ctxprofiles']['results']
+    ctxErrors = compareCtxProfiles(ctx, tprofiles)
+    for i in ctxErrors:
+        print(json.dumps(i))
     
     #check VM tags
     print("***VM Tag Validation***")

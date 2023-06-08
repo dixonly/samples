@@ -39,6 +39,7 @@ def get(session, req, api):
         r = session.get(url, **req)
         if r.status_code != 200:
             print("Status code for API %s not 200, got: %d" %(api,r.status_code))
+            print(json.dumps(r.text))
             exit()
         data=json.loads(r.text)
         if result:
@@ -96,8 +97,13 @@ def main():
     # services
     url = mgr + '/policy/api/v1/infra/services'
     output['services'] = get(session=s, req=req, api=url)
+
+    # context profiles
+    url = mgr + '/policy/api/v1/infra/context-profiles'
+    output['ctxprofiles'] = get(session=s, req=req, api=url)
+
     fp.write(json.dumps(output, indent=4))
     fp.close()
-
+    
 if __name__=="__main__":
     main()
