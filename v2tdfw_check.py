@@ -12,7 +12,11 @@ def parseParameters():
                         help="source storage.json")
     parser.add_argument('--data', required=True,
                         help="NSX-T data with getdfw.py")
-
+    parser.add_argument('--svcout', required=True)
+    parser.add_argument('--grpout', required=True)
+    parser.add_argument('--pout', required=True)
+    parser.add_argument('--ctxout', required=True)
+    parser.add_argument('--suffix', required=False)
     args=parser.parse_args()
     return args
 
@@ -311,7 +315,7 @@ def getPolicyFromData(policy, mc):
     else:
         return policy
     
-def classifyPolicies(policies,mc=False):
+def classifyPolicies(policies,mc=False, suffix=None):
     # if mc True, then policies is read from api.json
     data={}
     for i in policies:
@@ -320,6 +324,8 @@ def classifyPolicies(policies,mc=False):
             continue
         if p['category'] not in data.keys():
             data[p['category']] = []
+        if mc and suffix:
+            p['path'] = p['path']+suffix
         data[p['category']].append(p)
     for i in data.keys():
         data[i].sort(key=itemgetter('sequence_number'))
@@ -341,6 +347,7 @@ def getData(args):
     data['rules'] = target['rules']
     data['groups'] = target['groups']
     data['policies'] = target['policies']['results']
+    data['ctxprofiles'] = target['ctxprofiles']
     data['ctxprofiles'] = target['ctxprofiles']
     return data
 
@@ -488,6 +495,7 @@ def compareCtxProfiles(src, dst):
         sfound = None
         e={}
         e['profile'] = s['url']
+        e['body'] = s
         e['error'] = []
         if not s['body']:
             continue
@@ -548,10 +556,7 @@ def compareCtxProfiles(src, dst):
         if e['error']:
             errors.append(e)
     return errors
-
-                                        
-                
-                    
+        
                
         
 def compareServices(src, dst):
@@ -561,6 +566,7 @@ def compareServices(src, dst):
         sfound=None
         e={}
         e['service'] = s['url']
+        e['body'] = s
         e['error'] = []
         if not s['body']:
             continue
@@ -590,24 +596,29 @@ def compareServices(src, dst):
             else:
                 b=s['body']
                 t = found
+                if s['url'] != t['path']:
+                    s['updated_path'] = t['path']
+                else:
+                    s['updated_path'] = None
+                    
                 if len(b['service_entries']) != len(t['service_entries']):
                     e['error'].append('LENGTH source: %d, target: %d - source: %s target: %s'
                                       %(len(b['service_entries']),
                                         len(t['service_entries']),
                                         json.dumps(b['service_entries'], indent=4),
                                         json.dumps(t['service_entries'], indent=4)))
-                else:
-                    for se in b['service_entries']:
-                        seFound=False
-                        for de in t['service_entries']:
-                            if de['resource_type'] == se['resource_type']:
-                                if ('l4_protocol' in de.keys() and de['l4_protocol'] == se['l4_protocol']) or ('alg' in de.keys() and de['alg'] == se['alg']):
-                                    if sorted(de['source_ports']) == sorted(se['source_ports']):
-                                        if sorted(de['destination_ports']) == sorted(se['destination_ports']):
-                                            seFound=True
-                                            break
-                        if not seFound:
-                            e['error'].append("Service Entry not found: %s in target"% json.dumps(se))
+                    break
+                for se in b['service_entries']:
+                    seFound=False
+                    for de in t['service_entries']:
+                        if de['resource_type'] == se['resource_type']:
+                            if ('l4_protocol' in de.keys() and de['l4_protocol'] == se['l4_protocol']) or ('alg' in de.keys() and de['alg'] == se['alg']):
+                                if sorted(de['source_ports']) == sorted(se['source_ports']):
+                                    if sorted(de['destination_ports']) == sorted(se['destination_ports']):
+                                        seFound=True
+                                        break
+                    if not seFound:
+                        e['error'].append("Service Entry not found: %s in target"% json.dumps(se))
         if e['error']:
             errors.append(e)
 
@@ -671,7 +682,11 @@ def main():
             missingGroups.append(error)
     print("***Group Validaton***")
     print(json.dumps(missingGroups, indent=4))
-
+    fp = open(args.grpout, "w")
+    creategroups=[]
+    for i in missingGroups:
+        creategroups.append(i['source'])
+    fp.write(json.dumps(creategroups, indent=4))
     
 
     # Check Services
@@ -685,6 +700,14 @@ def main():
     print("*** Service Validation ***")
     for i in svcErrors:
         print(json.dumps(i))
+
+    fp = open(args.svcout, "w")
+    cservices=[]
+    for i in svcErrors:
+        cservices.append(i['body'])
+    fp.write(json.dumps(cservices, indent=4))
+    
+        
         
     ctx = []
     for cx in apiJson:
@@ -696,6 +719,12 @@ def main():
     ctxErrors = compareCtxProfiles(ctx, tprofiles)
     for i in ctxErrors:
         print(json.dumps(i))
+
+    fp = open(args.ctxout, "w")
+    ctxs = []
+    for i in ctxErrors:
+        ctxs.append(i['body'])
+    fp.write(json.dumps(ctxs, indent=4))
     
     #check VM tags
     print("***VM Tag Validation***")
@@ -712,7 +741,30 @@ def main():
         if '/security-policies/' in p['url']:
             policies.append(p)
             
-    sourcePolicies = classifyPolicies(policies, True)
+    sourcePolicies = classifyPolicies(policies, True, args.suffix)
+    for k in sourcePolicies:
+        for p in sourcePolicies[k]:
+            for r in p['rules']:
+                newSvc = []
+                for svc in r['services']:
+                    if svc == "ANY":
+                        newSvc.append(svc)
+                        continue
+                    found=False
+                    for i in services:
+                        if svc == i['url']:
+                            if 'updated_path' in i.keys() and i['updated_path']:
+                                newSvc.append(i['updated_path'])
+                            else:
+                                newSvc.append(svc)
+                            found=True
+                            break
+                    if not found:
+                        newSvc.append(svc)
+                r['services'] = newSvc
+                
+    fp = open(args.pout, "w")
+    fp.write(json.dumps(sourcePolicies, indent=4))
     '''
     for i in sourcePolicies.keys():
         for p in sourcePolicies[i]:
@@ -720,7 +772,7 @@ def main():
     '''
     tpolicies = inputData['policies']
 
-    activePolicies = classifyPolicies(tpolicies, False)
+    activePolicies = classifyPolicies(tpolicies, False, args.suffix)
     '''
     for i in activePolicies.keys():
         for p in activePolicies[i]:
@@ -738,6 +790,7 @@ def main():
         sourcePaths[k] = []
         for p in tmpSourcePolicies[k]:
             sourcePaths[k].append(p['path'])
+                
                                
     for k in tmpActivePolicies.keys():
         activePaths[k] = []
