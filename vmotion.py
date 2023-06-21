@@ -50,7 +50,7 @@ def parseParameters():
                         required=False,
                         help="Destination datastore volume")
     parser.add_argument('-l', '--network',
-                        required=False, nargs="*",
+                        required=True, nargs="*",
                         help="Destination network, must match number of VM vNICs in VM's HW ordering")
     parser.add_argument('--autovif',
                         action="store_true",
@@ -370,9 +370,6 @@ def main():
                       %cluster.name)
                 return
 
-            if not host and cluster.resourcePool == vm.resourcePool and sinv == dinv:
-                print("Must provide host when migrating within same cluster")
-                return
 
             if not host:
                 if (sinv != dinv):
@@ -414,9 +411,13 @@ def main():
             networks.append(network)
 
     for vm in vms:
+        if cluster:
+            if not host and cluster.resourcePool == vm.resourcePool and sinv == dinv:
+                print("Must provide host when migrating within same cluster for VM %s" %vm.name)
+                continue
         netSpec=setupNetworks(vm, host, networks, vifs=args.vifs, autovif=args.autovif)
         relocSpec.deviceChange = netSpec
-        print("Initiating migration of VM %s" %args.name)
+        print("Initiating migration of VM %s" %vm.name)
         vm.RelocateVM_Task(spec=relocSpec, priority=vim.VirtualMachine.MovePriority.highPriority)
 
 if __name__ == "__main__":
