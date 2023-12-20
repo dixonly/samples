@@ -14,66 +14,60 @@ import OpenSSL
 def parseParameters():
 
     parser = argparse.ArgumentParser(
-        description='Arguments to connect to vCenter to add a hosts to a cluster')
+            description='Arguments to connect to vCenter to add a hosts to a cluster')
     parser.add_argument('-s', '--sourcevc',
-                        required = True,
-                        action = 'store',
-                        help = 'Source Vcenter server name or IP')
+            required = True,
+            action = 'store',
+            help = 'Source Vcenter server name or IP')
     parser.add_argument('-d', '--destvc',
                         required=False,
                         action='store',
                         help="Destination VC server name or IP")
     
     parser.add_argument('-u', '--user',
-                        required=True,
-                        action='store',
-                        help='User name to connect to vcenter')
+            required=True,
+            action='store',
+            help='User name to connect to vcenter')
     parser.add_argument('-p', '--password',
-                        required=True,
-                        action='store',
-                        help = 'Password for connection to vcenter')
-    parser.add_argument('--duser',
-                        required=False,
-                        help="Destination VC Username, default to same as source VC user")
-    parser.add_argument('--dpassword',
-                        required=False,
-                        help="Destination VC user password, default to same as source VC user password")
+            required=True,
+            action='store',
+            help = 'Password for connection to vcenter')
     parser.add_argument('-c', '--cluster',
-                        required=False,
-                        action='store',
-                        help = 'Destination cluster name to poweron VM. Overides the --servers argument ')
+            required=False,
+            action='store',
+            help = 'Destination cluster name to poweron VM. Overides the --servers argument ')
     parser.add_argument("-e", '--server',
-                        required=False,
-                        action = 'store',
-                        help = "Destination ESXi server to power on VM.  Ignored if cluster provided")
+            required=False,
+            action = 'store',
+            help = "ESXi server to power on VM.  Ignored if servers provided")
     parser.add_argument('-v', '--datastore',
                         required=False,
                         help="Destination datastore volume")
+    parser.add_argument('--dvs',
+                        required=False,
+                        help="Name of the VDS switch, provide this to remove ambiguity when searching for the networks with the same name across different VDS")
     parser.add_argument('-l', '--network',
-                        required=True, nargs="*",
+                        required=False, nargs="*",
                         help="Destination network, must match number of VM vNICs in VM's HW ordering")
-    parser.add_argument('--autovif',
-                        action="store_true",
-                        help="Automatically use vm Instance UUID to specify VIF, do not use --vif.  This is the option to use with NSX Migration Coordinator")
     parser.add_argument('-f', '--vifs',
                         required=False,
                         help="VIF when attaching to NVDS portgroup, must match number of VM vNICs in order")
-    parser.add_argument("-n", '--names',
-                        required = True,
-                        nargs="*",
+    parser.add_argument('--autovif',
+                        action="store_true",
+                        help="Automatically use vm Instance UUID to specify VIF, do not use --vif")
+    parser.add_argument('--srcCluster',
+                        help="Specify the source cluster to search for the VM")
+    parser.add_argument("-n", '--name',
+                        required = False,  nargs="*",
                         action='store',
-                        help = "VM name or name pattern to match for poweron ")
-    parser.add_argument('--glob', required=False,
-                        choices=["exact", "startswith", "endswith", "contains"],
-                        default="exact",
-                        help="VM name matching method")
+                        help = "VM name ")
+
 
     args = parser.parse_args()
     if not args.server and not args.cluster:
         print("Either destination server or cluster must be provided")
-        exit()
+        return False
     return args
-
 
 def getObject(inv, vimtype, name, verbose=False):
     """
@@ -95,109 +89,37 @@ def getObject(inv, vimtype, name, verbose=False):
             pass
     return obj
 
-def getVms(inv, names, glob, verbose=False):
-    vms = []
-    container = inv.viewManager.CreateContainerView(inv.rootFolder,
-                                                    [vim.VirtualMachine],
-                                                    True)
-    print("Searching through %d VMs for name matching" % len(container.view))
-    count = 0
-    for i in container.view:
-        if count % 100 == 0:
-            print("Completed search of %d of %d VMs.." %(count, len(container.view)))
-        try:
-            if verbose:
-                print("Checking %s %s against reference %s" %(i.name, i._moId, name))
-
-            if glob.lower() == 'exact':
-                if i.name in names:
-                    vms.append(i)
-                    continue
-            elif glob.lower() == 'contains':
-                for n in names:
-                    if n in i.name:
-                        vms.append(i)
-            elif glob.lower() == 'startswith':
-                for n in names:
-                    if i.name.startswith(n):
-                        vms.append(i)
-            elif glob.lower() == 'endswith':
-                for n in names:
-                    if i.name.endswith(n):
-                        vms.append(i)
-            count+=1
-        except vmodl.fault.ManagedObjectNotFound:
-            #print("VM %s no longer exist")
-            # This is if object was deleted after container view was created
-            pass
-    return vms
-
-def validateSourceNetworks(vms):
-    nicCount = -1
-    nics = []
-    keys=[]
-    error=0
-    for v in vms:
-        n=0
-        thisNics = []
-        thisKeys = []
-        for d in v.config.hardware.device:
-            if isinstance(d, vim.vm.device.VirtualEthernetCard):
-                n+=1
-                thisNics.append(d)
-                thisKeys.append(d.key)
-        if nicCount == -1:
-            nicCount=n
-            nics=thisNics
-            keys=thisKeys
-        if len(thisNics) != len(nics):
-            print("Number of nics (%d) on %s does not match previously found VMs (%d)"
-                  %(len(thisNics), v.name, len(nics)))
-            error+=1
-            continue
-            
-        for i,vnic in enumerate(thisNics):
-            if type(vnic.backing) != type(nics[i].backing):
-                print("Network backing (%s) of vNIC index %d for %s does not match previously found VMs (%s)"
-                      %(type(vnic.backing), thisKeys[i], v.name, type(nics[i].backing)))
-                error+=1
+def getVmList(inv, names, cluster=None):
+    vmList=[]
+    if cluster:
+        src = getObject(inv, [vim.ClusterComputeResource], cluster)
+        if not src:
+            print("Cluster %s not found in source VC inventory" %cluster)
+            return None
+        else:
+            print("Looking for VMs in cluster %s" %cluster)
+        clusterVms = []
+        print("Caching VM names in cluster %s to speed up search" %cluster)
+        for vm in src.resourcePool.vm:
+            clusterVms.append(vm.name)
+        for n in names:
+            found=False
+            if n in clusterVms:
+                vmList.append(src.resourcePool.vm[clusterVms.index(n)])
+                found=True
                 continue
-
-            if isinstance(vnic.backing, vim.vm.device.VirtualEthernetCard.OpaqueNetworkBackingInfo):
-                if vnic.backing.opaqueNetworkId != nics[i].backing.opaqueNetworkId:
-                    print("NSX Network %s of vNIC index %d for %s doe not match previously found VMs (%s)"
-                          %(vnic.backing.opaqueNetworkId, thisKeys[i], v.name,
-                            nics[i].backing.opaqueNetworkId))
-                    error+1
-                    continue
-                elif isinstance(vnic.backing, vim.vm.device.VirtualEthernetCard.DistributedVirtualPortBackingInfo):
-                    if vnic.backing.port.key != nics[i].backing.port.key \
-                       or vnic.backing.port.switchUuid != nics[i].backing.port.switchUuid:
-                        print("VDS key,switch (%s,%s) ofvNIC index %d for %s does not match previoulsy found VM (%s,%s)"
-                              %(vnic.backing.port.key,
-                                vnic.backing.port.switchUuid,
-                                thisKeys[i], v.name,
-                                nics[i].backing.port.key,
-                                nics[i].backing.port.switchUuid))
-                        error+=1
-                        continue
-                elif isinstance(vnic.backing, vim.vm.device.VirtualEthernetCard.NetworkBackinfoInfo):
-                    if vnic.backing.network != nics[i].backing.network:
-                        print("Portgroup %s of vNIC index %d for %s not match previously found VM"
-                              %(vnic.backing.network, thisKeys[i], v.name,
-                                nics[i].backing.network))
-                        error+=1
-                        continue
-                else:
-                    print("Unhandled network backing for VM %s: %s"
-                          %(v.name, type(vnic.backing)))
-                    
-    if error > 0:
-        print("Network backing not the same for all VMs")
-        return False
+            if not found:
+                print("VM %s not found in cluster %s" %(n, cluster))
+                return None
     else:
-        return True
-        
+        for n in names:
+            vm = getObject(inv, [vim.VirtualMachine], n)
+            if not vm:
+                print("VM %s not found in VC inventory" %n)
+                return None
+            vmList.append(vm)
+    return vmList
+
 def setupNetworks(vm, host, networks, vifs=None, autovif=False):
     # this requires vsphere 7 API
     nics = []
@@ -210,15 +132,14 @@ def setupNetworks(vm, host, networks, vifs=None, autovif=False):
 
 
     if len(nics) > len(networks):
-        print("not enough networks for %d nics on vm" %len(nics))
-        return None
+        print("not enough networks for %d nics on vm...only migrating first %d" %(len(nics), len(networks)))
 
-    if vifs and len(vifs) != len(nics):
+    if vifs and len(vifs) != len(networks):
         print("Number of VIFs must match number of vNICS")
         return None
 
     netdevs = []
-    for i in range(0,len(nics)):
+    for i in range(0,len(networks)):
         v = nics[i]
         n = networks[i]
         if isinstance(n, vim.OpaqueNetwork):
@@ -270,13 +191,12 @@ def main():
     print("This script is not supported by VMware.  Use at your own risk")
     args = parseParameters()
     password = args.password
-    user = args.user
     if hasattr(ssl, 'SSLContext'):
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         context.verify_mode=ssl.CERT_NONE
-        si = connect.SmartConnect(host=args.sourcevc, user=user, pwd=password, sslContext=context)
+        si = connect.SmartConnect(host=args.sourcevc, user=args.user, pwd=password, sslContext=context)
     else:
-        si = connect.SmartConnect(host=args.sourcevc, user=user, pwd=password)
+        si = connect.SmartConnect(host=args.sourcevc, user=args.user, pwd=password)
 
     if not si:
         print("Could not connect to source vcenter: %s " %args.sourcevc)
@@ -288,18 +208,12 @@ def main():
     if not args.destvc or args.sourcevc == args.destvc:
         di = si
     else:
-        if args.dpassword:
-            password=args.dpassword
-        if args.duser:
-            user=args.duser
-        
-        
         if hasattr(ssl, 'SSLContext'):
             context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
             context.verify_mode=ssl.CERT_NONE
-            di = connect.SmartConnect(host=args.destvc, user=user, pwd=password, sslContext=context)
+            di = connect.SmartConnect(host=args.destvc, user=args.user, pwd=password, sslContext=context)
         else:
-            di = connect.SmartConnect(host=args.destvc, user=user, pwd=password)
+            di = connect.SmartConnect(host=args.destvc, user=args.user, pwd=password)
         if not di:
             print("Could not connect to destination vcenter: %s " %args.destvc)
             return -1
@@ -337,11 +251,22 @@ def main():
                                 sslThumbprint=thumbprint)
         relocSpec.service = sl
 
-    #vm = getObject(sinv, [vim.VirtualMachine], args.name, verbose=False)
-    vms = getVms(sinv, args.names, args.glob, verbose=False)
-    print("Found %d VMs for migration." %len(vms))
-    if not validateSourceNetworks(vms):
-        exit()
+    vds=None
+    if args.dvs:
+        vds = getObject(dinv, [vim.DistributedVirtualSwitch], args.dvs)
+        if not vds:
+            print("VDS with name '%s' not ound" % args.dvs)
+            return
+
+    vmList = []
+    if args.vifs and len(args.name) > 1:
+        print("This script does not support migrating more than 1 VM at a time when specifying a VIF")
+        return
+    print("Finding VMs")
+    vmList = getVmList(sinv, args.name, args.srcCluster)
+    if not vmList:
+        print("Either not all VMs found or no VMs specified...quiting")
+        return
 
     host=None
     if args.server:
@@ -370,6 +295,9 @@ def main():
                       %cluster.name)
                 return
 
+            if not host and cluster.resourcePool == vm.resourcePool and sinv == dinv:
+                print("Must provide host when migrating within same cluster")
+                return
 
             if not host:
                 if (sinv != dinv):
@@ -402,23 +330,29 @@ def main():
     networks=[]
     for n in args.network:
         print("Searching VCenter for destination network(s)")
-        network = getObject(dinv, [vim.Network], n, verbose=False)
-        if not network:
-            print("Network %s not found" % args.network)
-            return 
+        network = None
+        if vds:
+            for pg in vds.portgroup:
+                if pg.name == n:
+                    network = pg
+                    break
+            if not network:
+                print("Network '%s' not found in in VDS '%s'" %(n, args.dvs))
+                return
         else:
-            print("Destination network %s found." % network.name)
-            networks.append(network)
+            network = getObject(dinv, [vim.Network], n, verbose=False)
+            if not network:
+                print("Network %s not found" % args.network)
+                return 
+        print("Destination network %s found." % network.name)
+        networks.append(network)
 
-    for vm in vms:
-        if cluster:
-            if not host and cluster.resourcePool == vm.resourcePool and sinv == dinv:
-                print("Must provide host when migrating within same cluster for VM %s" %vm.name)
-                continue
+    for vm in vmList:
         netSpec=setupNetworks(vm, host, networks, vifs=args.vifs, autovif=args.autovif)
         relocSpec.deviceChange = netSpec
         print("Initiating migration of VM %s" %vm.name)
         vm.RelocateVM_Task(spec=relocSpec, priority=vim.VirtualMachine.MovePriority.highPriority)
+    
 
 if __name__ == "__main__":
     main()
