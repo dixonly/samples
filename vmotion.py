@@ -7,7 +7,6 @@ from pyVmomi import vmodl
 #from tools import tasks
 import atexit
 import argparse
-import subprocess
 import ssl
 import OpenSSL
 
