@@ -50,6 +50,7 @@ def parseParameters():
                         help="Destination network, must match number of VM vNICs in VM's HW ordering")
     parser.add_argument('-f', '--vifs',
                         required=False,
+                        nargs="*",
                         help="VIF when attaching to NVDS portgroup, must match number of VM vNICs in order")
     parser.add_argument('--autovif',
                         action="store_true",
@@ -134,7 +135,7 @@ def setupNetworks(vm, host, networks, vifs=None, autovif=False):
         print("not enough networks for %d nics on vm...only migrating first %d" %(len(nics), len(networks)))
 
     if vifs and len(vifs) != len(networks):
-        print("Number of VIFs must match number of vNICS")
+        print("Number of VIFs must match number of vNICS: vifcount: %d network count: %d"%(len(vifs), len(networks)))
         return None
 
     netdevs = []
@@ -161,6 +162,16 @@ def setupNetworks(vm, host, networks, vifs=None, autovif=False):
                 v.externalId = "%s:%s" % (vmId, keys[i])
                 
                 
+        elif vifs and n.config.backingType=="nsx":
+            v.backing = vim.vm.device.VirtualEthernetCard.OpaqueNetworkBackingInfo()
+            v.backing.opaqueNetworkId = n.config.logicalSwitchUuid
+            v.backing.opaqueNetworkType = "nsx.LogicalSwitch"
+            if vifs:
+                v.externalId=vifs[i]
+            elif autovif:
+                v.externalId="%s:%s" %(vmId,keys[i])
+
+            print("Migrating VM %s NIC %d to destination dvg with nsx UUID %s on switch %s..." %(vm.name, i, n.config.logicalSwitchUuid, n.config.distributedVirtualSwitch.uuid))
                 
         elif isinstance(n, vim.DistributedVirtualPortgroup):
             # create dvpg handling
