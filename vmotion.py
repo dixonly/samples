@@ -162,17 +162,6 @@ def setupNetworks(vm, host, networks, vifs=None, autovif=False):
                 v.externalId = "%s:%s" % (vmId, keys[i])
                 
                 
-        elif vifs and n.config.backingType=="nsx":
-            v.backing = vim.vm.device.VirtualEthernetCard.OpaqueNetworkBackingInfo()
-            v.backing.opaqueNetworkId = n.config.logicalSwitchUuid
-            v.backing.opaqueNetworkType = "nsx.LogicalSwitch"
-            if vifs:
-                v.externalId=vifs[i]
-            elif autovif:
-                v.externalId="%s:%s" %(vmId,keys[i])
-
-            print("Migrating VM %s NIC %d to destination dvg with nsx UUID %s on switch %s..." %(vm.name, i, n.config.logicalSwitchUuid, n.config.distributedVirtualSwitch.uuid))
-                
         elif isinstance(n, vim.DistributedVirtualPortgroup):
             # create dvpg handling
             vdsPgConn = vim.dvs.PortConnection()
