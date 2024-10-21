@@ -103,3 +103,50 @@
 
   Outputs the summaries to a CSV file; also optionally outputs all of
   the collected details to a JSON file     
+
+## dfwcopy.py
+  Apply the DFW configurations of one manager to another one.  The
+  input to the script is the JSON return from the API to the source
+  NSX Manager: GET 
+  /policy/api/v1/infra?filter=Type-Domain%7CGroup%7CService%7CPolicyContextProfile%7CSecurityPolicy%7CRule
+
+  The GET API will return he domain, groups, services, context profiles,
+  and policies fromthe source NSX Manager.  The script will then extract
+  only the user defined configs (i.e. exclude the system defined ones), 
+  then apply them to the target NSX Manager.  
+
+  Note that when applying to the target NSX Manager, the script does 
+  not perform any conflict checks.  Within NSX Manager, each configuration
+  is uniquely identified within its configuration by its "path" property.
+  If a configuration with exactly the same path already exists on the
+  destination, it will be updated with the configuration from the source.
+ 
+  Note that I've only tested this against a destination that's empty,
+  or iteratively a re-run or update of the same configs from the source.
+  As such, all updates will not see conflicts if we assume that the 
+  source contains the most up-to-date source of truth for the configs.
+  The configs will be performed with PATCH APIs where the source's
+  revision number is not removed - hence, if the destination has a config
+  with the same path but newer revision, that specific update may fail.
+ 
+  The --output parameter optionally saves all the configuration that
+  will be applied to the target.  The --logfile parameter will
+  optionally saves all the API results for the configurations for 
+  auditing.
+
+  This script requires the contents of the utils directory.
+
+  usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--output OUTPUT] [--logfile LOGFILE]
+
+   options:
+     -h, --help           show this help message and exit
+     --nsx NSX            Target NSX Manager
+     --user USER          NSX User
+     --password PASSWORD  NSX User password
+     --file FILE          Input File
+     --output OUTPUT
+     --logfile LOGFILE
+
+
+  
+
