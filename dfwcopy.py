@@ -9,7 +9,6 @@ import csv
 from utils.nsxconnect import NsxConnect
 import getpass
 from utils.logger import Logger
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/utils')
 
 #
 # The input file is taken return from GET /policy/api/v1/infra?filter=Type-Domain%7CGroup%7CService%7CPolicyContextProfile%7CSecurityPolicy%7CRule
