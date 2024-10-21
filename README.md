@@ -111,9 +111,10 @@
   /policy/api/v1/infra?filter=Type-Domain%7CGroup%7CService%7CPolicyContextProfile%7CSecurityPolicy%7CRule
 
   The GET API will return he domain, groups, services, context profiles,
-  and policies fromthe source NSX Manager.  The script will then extract
+  and policies from the source NSX Manager.  The script will then extract
   only the user defined configs (i.e. exclude the system defined ones), 
-  then apply them to the target NSX Manager.  
+  then apply them to the target NSX Manager. Note that I've only tested
+  against non-Federation and non-VPC/Projects configurations.
 
   Note that when applying to the target NSX Manager, the script does 
   not perform any conflict checks.  Within NSX Manager, each configuration
