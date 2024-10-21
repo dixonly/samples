@@ -136,6 +136,7 @@
 
   This script requires the contents of the utils directory.
 
+  <code>
   usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--output OUTPUT] [--logfile LOGFILE]
 
    options:
@@ -147,6 +148,7 @@
      --output OUTPUT
      --logfile LOGFILE
 
+  </code>
 
   
 
