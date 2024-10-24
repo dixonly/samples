@@ -110,7 +110,7 @@
   NSX Manager: GET 
   /policy/api/v1/infra?filter=Type-Domain%7CGroup%7CService%7CPolicyContextProfile%7CSecurityPolicy%7CRule
 
-  The GET API will return he domain, groups, services, context profiles,
+  The GET API will return the domain, groups, services, context profiles,
   and policies from the source NSX Manager.  The script will then extract
   only the user defined configs (i.e. exclude the system defined ones), 
   then apply them to the target NSX Manager. Note that I've only tested
@@ -132,7 +132,7 @@
  
   The --output parameter optionally saves all the configuration that
   will be applied to the target.  The --logfile parameter will
-  optionally saves all the API results for the configurations for 
+  optionally save all the API results for the configurations for 
   auditing.
 
   This script requires the contents of the utils directory.

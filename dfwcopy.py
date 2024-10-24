@@ -93,9 +93,18 @@ def applyAttributes(nsx, attributes,reverse=False):
     for r in results["results"]:
         if "attributes" in r.keys():
             customAtt.extend(r["attributes"])
+        else:
+            customAtt = attributes
+            for c in customAtt:
+                r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
+                              data=c,
+                              verbose=True,
+                              codes=[200])
+            return
+
+
                              
     for a in attributes:
-        preC=None
         for c in customAtt:
             changed = False
             if c["key"] == a["key"]:
@@ -109,8 +118,10 @@ def applyAttributes(nsx, attributes,reverse=False):
                             c["value"].append(v)
                             changed=True
             
+            else:
+                c = a
+                changed=True
             if changed:
-                #print(json.dumps(c,indent=4))
                 r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
                               data=c,
                               verbose=True,
@@ -194,6 +205,9 @@ def main():
         if k["resource_type"] == "ChildSecurityPolicy":
             policies.append(k["SecurityPolicy"])
         elif k["resource_type"] == "ChildGroup":
+            # these are DFW exclusion list,etc
+            if k["Group"]["_system_owned"]:
+                continue
             groups.append(k["Group"])
             #if k["Group"]["_system_owned"]:
             #    print(json.dumps(k["Group"]))
