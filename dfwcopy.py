@@ -100,6 +100,9 @@ def applyAttributes(nsx, attributes,reverse=False):
                               data=c,
                               verbose=True,
                               codes=[200])
+                if r.status_code != 200:
+                    print("   ***ERROR: code %d" %r.status_code)
+                    print("    " + r.text)
             return
 
 
@@ -126,22 +129,34 @@ def applyAttributes(nsx, attributes,reverse=False):
                               data=c,
                               verbose=True,
                               codes=[200])
+                if r.status_code != 200:
+                    print("   ***ERROR: code %d" %r.status_code)
+                    print("    " + r.text)
 
 def applyCtx(nsx, ctx):
     for c in ctx:
         print("Updating context profile: %s" %c["display_name"])
         r = nsx.patch(api="/policy/api/v1%s" %c["path"], data=c, verbose=True,
                       codes=[200])
+        if r.status_code != 200:
+            print("   ***ERROR: code %d" %r.status_code)
+            print("    " + r.text)
 def applyServices(nsx, services):
     for s in services:
         print("Updating service: %s" % s["display_name"])
         r = nsx.patch(api="/policy/api/v1%s" %s["path"],
                       data=s, verbose=True, codes=[200])
+        if r.status_code != 200:
+            print("   ***ERROR: code %d" %r.status_code)
+            print("    " + r.text)
 def applyGroups(nsx, groups):
     for g in groups:
         print("Updating group: %s" %g["display_name"])
         r = nsx.patch(api="/policy/api/v1%s" %g["path"],
                       data=g, verbose=True, codes=[200])
+        if r.status_code != 200:
+            print("   ***ERROR: code %d" %r.status_code)
+            print("    " + r.text)
 def applyPolicies(nsx, policies):
     for p in policies:
         print("Updating Policy: %s" %p["display_name"])
@@ -151,7 +166,9 @@ def applyPolicies(nsx, policies):
                 p["rules"].append(c["Rule"]) 
         r = nsx.patch(api="/policy/api/v1%s" %p["path"],
                       data=p, verbose=True, codes=[200])
-        
+        if r.status_code != 200:
+            print("   ***ERROR: code %d" %r.status_code)
+            print("    " + r.text)
 def main():
     args = parseParameters()
     logger=Logger(args.logfile)

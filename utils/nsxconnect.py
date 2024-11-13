@@ -194,6 +194,13 @@ class NsxConnect(requests.Request):
                 raise ValueError("Return code '%d' not in list of expected codes: %s\n %s"
                       %(result.status_code,codes, result.text))
 
+    def __checkApiLimit(self, result,verbose=True, codes=[429]):
+        if result.status_code in codes:
+            if verbose:
+                print("API limit exceeded")
+            return True
+        else:
+            return False
             
     def get(self, api, verbose=True, trial=False, codes=None, display=False):
         '''
@@ -223,6 +230,15 @@ class NsxConnect(requests.Request):
                     
                 r = self.session.get(url, timeout=self.timeout,
                                      **self.requestAttr)
+                throttle=1
+                while self.__checkApiLimit(r):
+                    self.logger.info("API Limit exceeded, sleeping %s seconds and retrying"
+                                     % throttle)
+                    time.sleep(throttle)
+                    r = self.session.get(url, timeout=self.timeout,
+                                         **self.requestAttr)
+                    throttle+=1
+                    
                 self.__checkReturnCode(r, codes)
                 payload = json.loads(r.text)
                 if result:
@@ -265,11 +281,19 @@ class NsxConnect(requests.Request):
             r = self.session.patch(url,data=json.dumps(data),
                                    timeout=self.timeout,
                                    **self.requestAttr)
+            throttle=1
+            while self.__checkApiLimit(r):
+                self.logger.info("API Limit exceeded, sleeping %s seconds and retrying"
+                                 % throttle)
+                time.sleep(throttle)
+                r = self.session.patch(url,data=json.dumps(data),
+                                       timeout=self.timeout,
+                                       **self.requestAttr)
+                throttle+=1
             if verbose:
                 self.logger.info('result code: %d' %r.status_code)
                 if r.text:
                     self.logger.info(r.text)
-                    return json.loads(r.text)
         else:
             if verbose:
                 self.logger.info("API not called - in safe mode")
@@ -299,6 +323,15 @@ class NsxConnect(requests.Request):
             r = self.session.put(url, data=json.dumps(data),
                                  timeout=self.timeout,
                                  **self.requestAttr)
+            throttle=1
+            while self.__checkApiLimit(r):
+                self.logger.info("API Limit exceeded, sleeping %s seconds and retrying"
+                                 % throttle)
+                time.sleep(throttle)
+                r = self.session.put(url, data=json.dumps(data),
+                                     timeout=self.timeout,
+                                     **self.requestAttr)
+                throttle+=1
             self.__checkReturnCode(r, codes)
             if verbose:
                 self.logger.info('result code: %d' %r.status_code)
@@ -324,6 +357,15 @@ class NsxConnect(requests.Request):
             r = self.session.delete(url,timeout=self.timeout,
                                     data=json.dumps(data), 
                                     **self.requestAttr)
+            throttle=1
+            while self.__checkApiLimit(r):
+                self.logger.info("API Limit exceeded, sleeping %s seconds and retrying"
+                                 % throttle)
+                time.sleep(throttle)
+                r = self.session.delete(url,timeout=self.timeout,
+                                        data=json.dumps(data), 
+                                        **self.requestAttr)
+                throttle+=1
             self.__checkReturnCode(r,codes)
             if verbose:
                 self.logger.info('result code: %d' %r.status_code)
@@ -354,6 +396,15 @@ class NsxConnect(requests.Request):
             r = self.session.post(url, data=json.dumps(data),
                                   timeout=self.timeout,
                                   **self.requestAttr)
+            throttle=1
+            while self.__checkApiLimit(r):
+                self.logger.info("API Limit exceeded, sleeping %s seconds and retrying"
+                                 % throttle)
+                time.sleep(throttle)
+                r = self.session.post(url, data=json.dumps(data),
+                                      timeout=self.timeout,
+                                      **self.requestAttr)
+                throttle+=1
             self.__checkReturnCode(r, codes)
             if verbose:
                 self.logger.info('result code: %d' %r.status_code)
