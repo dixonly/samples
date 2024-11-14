@@ -137,6 +137,16 @@
 
   This script requires the contents of the utils directory.
 
+  Any configuration errors will be recorded in the log file and
+  printed on screen.  Because configuration is performed sequentially,
+  there may be some configurations that reference other ones
+  that haven't been submitted yet.  For example, a Group could
+  be referencing an as-yet to be configured IPSET.  If any
+  errors are referencing invalid or missing configs, just 
+  re-run the script again with the same input again.  All the
+  configurations are configured using REST PATCH APIs and
+  idempotent.  
+
   <code>
   usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--output OUTPUT] [--logfile LOGFILE]
 

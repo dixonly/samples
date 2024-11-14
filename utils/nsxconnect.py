@@ -185,14 +185,19 @@ class NsxConnect(requests.Request):
                                                 i['id'],
                                                 i['path'] if 'path' in i.keys() else "-"))
                     
-    def __checkReturnCode(self, result, codes):
+    def __checkReturnCode(self, result, codes, fail=False):
         '''
         Checks HTTP requests result.status_code against a list of accepted codes
         '''
         if codes:
             if result.status_code not in codes:
-                raise ValueError("Return code '%d' not in list of expected codes: %s\n %s"
-                      %(result.status_code,codes, result.text))
+                if fail:
+                    raise ValueError("Return code '%d' not in list of expected codes: %s\n %s"
+                                     %(result.status_code,codes, result.text))
+                else:
+                    print("Return code '%d' is not in list of expected codes %s\n %s"
+                          %(result.status_code, codes, result.txt))
+                          
 
     def __checkApiLimit(self, result,verbose=True, codes=[429]):
         if result.status_code in codes:
