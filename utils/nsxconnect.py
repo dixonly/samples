@@ -196,7 +196,7 @@ class NsxConnect(requests.Request):
                                      %(result.status_code,codes, result.text))
                 else:
                     print("Return code '%d' is not in list of expected codes %s\n %s"
-                          %(result.status_code, codes, result.txt))
+                          %(result.status_code, codes, result.text))
                           
 
     def __checkApiLimit(self, result,verbose=True, codes=[429]):
