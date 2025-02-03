@@ -1,4 +1,4 @@
-#/usr/bin/env python3
+#!/usr/bin/env python3
 import sys, os
 import argparse
 import ipaddress
@@ -230,6 +230,7 @@ def main():
             #    print(json.dumps(k["Group"]))
 
 
+            
     outfp = open(args.output, "w")
     outdata={}
     outdata["services"] = userSvc
