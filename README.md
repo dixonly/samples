@@ -111,10 +111,12 @@
   /policy/api/v1/infra?filter=Type-Domain%7CGroup%7CService%7CPolicyContextProfile%7CSecurityPolicy%7CRule
 
   The GET API will return the domain, groups, services, context profiles,
-  and policies from the source NSX Manager.  The script will then extract
-  only the user defined configs (i.e. exclude the system defined ones), 
-  then apply them to the target NSX Manager. Note that I've only tested
-  against non-Federation and non-VPC/Projects configurations.
+  and policies from the source NSX Manager.  In lieu of externally retrieving
+  this data via an API call, the script can do the same with the
+  "--export --file <filename>" parameters.  The script will extract
+  only the user defined configs (i.e. exclude the system defined ones) from
+  the input file, and then apply them to the target NSX Manager. Note
+  that I've only tested against non-Federation and non-VPC/Projects configurations.
 
   Note that when applying to the target NSX Manager, the script does 
   not perform any conflict checks.  Within NSX Manager, each configuration
@@ -122,12 +124,10 @@
   If a configuration with exactly the same path already exists on the
   destination, it will be updated with the configuration from the source.
  
-  Note that I've only tested this against a destination that's empty,
-  or iteratively a re-run or update of the same configs from the source.
-  As such, all updates will not see conflicts if we assume that the 
-  source contains the most up-to-date source of truth for the configs.
-  The configs will be performed with PATCH APIs where the source's
-  revision number is not removed - hence, if the destination has a config
+  When applying to the target, all updates will detect for conflicts because
+  we assume that the source contains the most up-to-date source of truth
+  for the configs. The config updates will be performed with PATCH APIs where
+  the source's  revision number is not removed - hence, if the destination has a config
   with the same path but newer revision, that specific update may fail.
  
   The --output parameter optionally saves all the configuration that
@@ -148,18 +148,57 @@
   idempotent.  
 
   <code>
-  usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--output OUTPUT] [--logfile LOGFILE]
 
-   options:
-     -h, --help           show this help message and exit
-     --nsx NSX            Target NSX Manager
-     --user USER          NSX User
-     --password PASSWORD  NSX User password
-     --file FILE          Input File
-     --output OUTPUT
-     --logfile LOGFILE
+usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--export] [--prefix PREFIX] [--prefixrules] [--anchor ANCHOR] [--position {insert_before,insert_after}]
+                  [--output OUTPUT] [--logfile LOGFILE] [--retries RETRIES] [--undo]
+
+options:
+  -h, --help            show this help message and exit
+  --nsx NSX             Target NSX Manager
+  --user USER           NSX User
+  --password PASSWORD   NSX User password
+  --file FILE           Input File, or output to export config
+  --export              If specified, call H-API to the NSX Manager to export configs that can be used for migration
+  --prefix PREFIX       Prefix to append to all object names and IDs
+  --prefixrules
+  --anchor ANCHOR       Name of anchor policy for insertion
+  --position {insert_before,insert_after}
+                        Insert above or below anchor policy
+  --output OUTPUT
+  --logfile LOGFILE
+  --retries RETRIES     # of retries for services and group configs to resolve failures due to order of config for nested dependencies
+  --undo                Undo the configs stored in --output argument
+  usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--output OUTPUT] [--logfile LOGFILE]
 
   </code>
 
   
+Use cases:
+1. Export the security and related configs from an NSX Manager
+<code>
+./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <output filename> --export
+</code>
 
+2. Migrate exported configs to a target NSX Manager
+
+- Migrate as is - all names, path IDs, and sequences will be retained.  This will merge the configs into the target, and may update or overwrite any previously existing configs on the target that have the same ID & path.
+<code>
+./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>]
+
+</code>
+
+- Prefix all the configs and then migrate to a target NSX Manager.  This will add a prefix to all the config names, IDs, and paths.  When prefix is provided, the migration will update all the sequence numbers of the Policies - the ordering will be maintained.
+
+<code>
+./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>] --prefix <prefix string>
+
+</code>
+
+- Migrate all the configs to a target NSX Manager and position the migrated policies before or afer a specified anchor policy.  You can create a new empty anchor policy or use an pre-existing policy.  If the position is not specified, the default behavior is to migrate to before the anchor policy.
+
+<code>
+./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>] --prefix <prefix string> --anchor <name of anchor policy> [--position <insert_before | insert_after]
+
+</code>
+
+3. Undo, i.e. delete, all the migrated policies from the target.  Using the --output file, delete all the migrated Policies, Groups, Services, and Context Profiles from the destination.  This can be done by just adding the "--undo" parameter to any of the above example commands.

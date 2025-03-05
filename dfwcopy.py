@@ -6,6 +6,7 @@ import uuid
 import copy
 import json
 import csv
+from operator import itemgetter
 from utils.nsxconnect import NsxConnect
 import getpass
 from utils.logger import Logger
@@ -47,9 +48,20 @@ def parseParameters():
     parser.add_argument("--nsx", required=True, help="Target NSX Manager")
     parser.add_argument("--user", required=True, help="NSX User")
     parser.add_argument("--password", required=False, help="NSX User password")
-    parser.add_argument("--file", required=True, help="Input File")
+    parser.add_argument("--file", required=True, help="Input File, or output to export config")
+    parser.add_argument("--export", required=False, action="store_true",
+                        help="If specified, call H-API to the NSX Manager to export configs that can be used for migration")
+    parser.add_argument("--prefix", required=False, help="Prefix to append to all object names and IDs")
+    parser.add_argument("--prefixrules", required=False, action="store_true")
+    parser.add_argument("--anchor", required=False, default=None,
+                        help="Name of anchor policy for insertion")
+    parser.add_argument("--position", required=False, choices=["insert_before", "insert_after"], default="insert_before",
+                        help="Insert above or below anchor policy")
     parser.add_argument("--output", required=False)
     parser.add_argument("--logfile", required=False, default="logfile.txt")
+    parser.add_argument("--retries", required=False, default=5, help="# of retries for services and group configs to resolve failures due to order of config for nested dependencies")
+    parser.add_argument("--undo", action="store_true",
+                        help="Undo the configs stored in --output argument")
     args = parser.parse_args()
     return args
 
@@ -89,7 +101,7 @@ def applyAttributes(nsx, attributes,reverse=False):
     customAtt=[]
     results = nsx.get(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
                         verbose=False, codes=[200])
-
+    failed=0
     for r in results["results"]:
         if "attributes" in r.keys():
             customAtt.extend(r["attributes"])
@@ -103,9 +115,8 @@ def applyAttributes(nsx, attributes,reverse=False):
                 if r.status_code != 200:
                     print("   ***ERROR: code %d" %r.status_code)
                     print("    " + r.text)
-            return
-
-
+                    failed+=1
+            return failed
                              
     for a in attributes:
         for c in customAtt:
@@ -132,8 +143,11 @@ def applyAttributes(nsx, attributes,reverse=False):
                 if r.status_code != 200:
                     print("   ***ERROR: code %d" %r.status_code)
                     print("    " + r.text)
+                    failed+=1
+    return failed
 
 def applyCtx(nsx, ctx):
+    failed=0
     for c in ctx:
         print("Updating context profile: %s" %c["display_name"])
         r = nsx.patch(api="/policy/api/v1%s" %c["path"], data=c, verbose=True,
@@ -141,7 +155,11 @@ def applyCtx(nsx, ctx):
         if r.status_code != 200:
             print("   ***ERROR: code %d" %r.status_code)
             print("    " + r.text)
+            failed+=1
+            
 def applyServices(nsx, services):
+    errorCount=0
+    failed = []
     for s in services:
         print("Updating service: %s" % s["display_name"])
         r = nsx.patch(api="/policy/api/v1%s" %s["path"],
@@ -149,7 +167,17 @@ def applyServices(nsx, services):
         if r.status_code != 200:
             print("   ***ERROR: code %d" %r.status_code)
             print("    " + r.text)
+            errorCount+=1
+            failed.append(s)
+    if errorCount>0:
+        return failed
+    else:
+        print("All services applied without errors")
+        return None
+        
 def applyGroups(nsx, groups):
+    errorCount=0
+    failed = []
     for g in groups:
         print("Updating group: %s" %g["display_name"])
         r = nsx.patch(api="/policy/api/v1%s" %g["path"],
@@ -157,18 +185,109 @@ def applyGroups(nsx, groups):
         if r.status_code != 200:
             print("   ***ERROR: code %d" %r.status_code)
             print("    " + r.text)
-def applyPolicies(nsx, policies):
+            errorCount+=1
+            failed.append(g)
+    if errorCount > 0:
+        return failed
+    else:
+        print("All groups applied without errors")
+        return None
+        
+        
+def applyPolicies(nsx, policies, logger, anchor=None, position=None):
+    failed=0
+    first=True
+    firstPolicy=None
     for p in policies:
         print("Updating Policy: %s" %p["display_name"])
         p["rules"]=[]
         for c in p["children"]:
             if "Rule" in c.keys():
-                p["rules"].append(c["Rule"]) 
-        r = nsx.patch(api="/policy/api/v1%s" %p["path"],
-                      data=p, verbose=True, codes=[200])
-        if r.status_code != 200:
-            print("   ***ERROR: code %d" %r.status_code)
-            print("    " + r.text)
+                p["rules"].append(c["Rule"])
+        if first and anchor:
+            pconfig = nsx.get(api="/policy/api/v1/infra/domains/default/security-policies",
+                              verbose=False, codes=[200])
+            anchorPolicy=None
+            for pc in pconfig["results"]:
+                if pc["display_name"] == anchor:
+                    anchorPolicy=pc
+                    break
+            if not anchorPolicy:
+                print("Migration failed - Policies - Anchor Policy %s not fund" %anchor)
+                logger.warn("Migration failed - Policies - Anchor Policy %s not fund" %anchor)
+                failed+=1
+                return failed
+            
+            r = nsx.patch(api="/policy/api/v1%s" %p["path"],
+                          data=p, verbose=True, codes=[200])
+            if r.status_code != 200:
+                print("   ***ERROR: code %d" %r.status_code)
+                print("    " + r.text)
+                failed+=1
+                print("Migration failed - Policies - failed to migrate first policy: %s" %p["display_name"])
+                logger.warn("Migration failed - Policies - failed to migrate first policy: %s" %p["display_name"])
+                return failed
+
+            firstPolicy=nsx.get(api="/policy/api/v1%s" %
+                                (p["path"]))
+            r = nsx.post(api="/policy/api/v1%s/?action=revise&anchor_path=%s&operation=%s" %
+                         (p["path"], anchorPolicy["path"], position),
+                         data=firstPolicy, verbose=True, codes=[200])
+            first=False
+            
+        else:
+            r = nsx.patch(api="/policy/api/v1%s" %p["path"],
+                          data=p, verbose=True, codes=[200])
+            if r.status_code != 200:
+                print("   ***Configuration migration failed for Policy %s ERROR: code %d" %
+                      (p["display_name"], r.status_code))
+                print("    " + r.text)
+                logger.warn("   ***Configuration migration failed for Policy %s ERROR: code %d" %
+                            (p["display_name"], r.status_code))
+                logger.warn("    " + r.text)
+                failed+=1
+            if anchor:
+                currentPolicy = nsx.get(api="/policy/api/v1%s" %
+                                        p["path"], verbose=False, codes=[200])
+                r = nsx.post(api="/policy/api/v1%s?action=revise&anchor_path=%s&operation=insert_after" %
+                             (p["path"], firstPolicy["path"]) , data=currentPolicy, verbose=True,codes=[200])
+                if not r:
+                    print("   ***Configuration positioning failed for Policy %s ERROR: code %d" %
+                          (p["display_name"], r.status_code))
+                    print("    " + r.text)
+                    logger.warn("   ***Configuration positioning  failed for Policy %s ERROR: code %d" %
+                            (p["display_name"], r.status_code))
+                    logger.warn("    " + r.text)
+                    failed+=1
+                firstPolicy = currentPolicy
+    return failed
+
+def Undo(nsx, configs, logger, retries):
+    flow = ["rules", "groups", "services", "ctx"]
+    failed={"groups": [], "services": [], "rules": [], "ctx": []}
+    for otype in flow:
+        if otype not in configs.keys():
+            print("No %s to delete")
+            continue
+        faile=None
+        for t in configs[otype]:
+            print("Deleting %s: %s - %s" %(otype, t["display_name"], t["path"]))
+            logger.info("Deleting %s: %s - %s" %(otype, t["display_name"], t["path"]))
+            r = nsx.delete(api="/policy/api/v1%s" % t["path"], verbose=True, codes=[200])
+            if r.status_code != 200 and otype in ["services", "groups"]:
+                logger.warn("Failed to delete %s - %s" %(otype, t["display_name"]))
+                failed[otype].append(t)
+    return failed
+
+def doExport(nsx, filename):
+    print("Retrieving data from NSX")
+    data = nsx.get(api="/policy/api/v1/infra?filter=Type-Domain|Group|Service|PolicyContextProfile|SecurityPolicy|Rule", verbose=False, codes=[200])
+    print("Writing data to output file %s"%filename)
+    with open(filename, "w") as fp:
+        fp.write(json.dumps(data, indent=3))
+        fp.close
+    print("Complete")
+    
 def main():
     args = parseParameters()
     logger=Logger(args.logfile)
@@ -177,6 +296,34 @@ def main():
         args.password=getpass.getpass("NSX Manager %s password: " %args.nsx)
 
     nsx = NsxConnect(server=args.nsx, logger=logger, user=args.user, password=args.password)
+
+    if args.export:
+        doExport(nsx, args.file)
+        return
+    
+        
+    if args.undo:
+        if not args.output:
+            print("The undo action is specified, but missing the input JSON via the --output argument")
+            return
+        with open(args.output, "r", newline='') as fp:
+            configs = json.load(fp)
+        attempt=0
+        while (attempt < args.retries and
+               (len(configs["groups"]) > 0 or len(configs["services"]) > 0) ):
+            configs = Undo(nsx, configs, logger, args.retries)
+            if len(configs["groups"]) > 0 or len(configs["services"]) > 0:
+                print("Failed to delete %d groups and %d services" %
+                      (len(configs["groups"]), len(configs["services"])))
+                logger.info("Failed to delete %d groups and %d services" %
+                      (len(configs["groups"]), len(configs["services"])))
+                
+                attempt+=1
+                if attempt < args.retries:
+                    print("Retrying...")
+                    logger.info("Retrying...")
+
+        return
     
     with open(args.file, 'r', newline='') as fp:
         data=json.load(fp)
@@ -207,29 +354,42 @@ def main():
                 #print(json.dumps(svc))
         elif k["resource_type"] == "ChildDomain":
             domain=k
-    #print("User Context Length: %d" %len(userCtx))
-    #print("User Service Length: %d" %len(userSvc))
 
     domain=domain["Domain"]
-    #print(domain.keys())
     domainTypes=["ChildSecurityPolicy", "ChildGroup"]
     policies=[]
     groups=[]
+    sequence = 0
     for k in domain["children"]:
         if k["resource_type"] not in domainTypes:
             print("  domainChild: %s" % k["resource_type"])
     
         if k["resource_type"] == "ChildSecurityPolicy":
+            if k["SecurityPolicy"]["category"] == "Ethernet":
+                logger.info("Not migrating default layer 2 policy")
+                continue
+            elif k["SecurityPolicy"]["sequence_number"] > sequence and k["SecurityPolicy"]["sequence_number"] < 999999:
+                sequence = k["SecurityPolicy"]["sequence_number"]
             policies.append(k["SecurityPolicy"])
         elif k["resource_type"] == "ChildGroup":
             # these are DFW exclusion list,etc
             if k["Group"]["_system_owned"]:
                 continue
             groups.append(k["Group"])
-            #if k["Group"]["_system_owned"]:
-            #    print(json.dumps(k["Group"]))
 
+    policies = sorted(policies, key=itemgetter('sequence_number'))
+    
+    if args.prefix:
+        userSvc = addPrefixToSvc(userSvc, args.prefix)
+        groups = addPrefixToGroups(groups, args.prefix)
+        userCtx = addPrefixToCtx(userCtx, args.prefix)
+        policies = addPrefixToPolicies(policies,  args.prefix,
+                                       userSvc, groups, userCtx,
+                                       sequence,
+                                       args.prefixrules)
 
+        # don't have anything to do for customAttributes
+        
             
     outfp = open(args.output, "w")
     outdata={}
@@ -238,17 +398,237 @@ def main():
     outdata["rules"] = policies
     outdata["attributes"] = customAttributes
     outdata["ctx"] = userCtx
-    
+
+        
     outfp.write(json.dumps(outdata, indent=3))
     outfp.close()
+    logger.info("Starting to apply attributes")
+    attfailed = applyAttributes(nsx, customAttributes, reverse=False)
+    if attfailed:
+        print("Migration Failed - Attributes: failed count: %d" %attfailed)
+        logger.error("Migration Failed - Attributes: failed count: %d" %attfailed)
+        
+    logger.info("Starting to apply Context Profiles")
+    ctxfailed = applyCtx(nsx, userCtx)
+    if ctxfailed:
+        print("Migration Failed - Context Profiles: failed count: %d" %ctxfailed)
+        logger.error("Migration Failed - ContextProfiless: failed count: %d" %ctxfailed)
+        
+    logger.info("Starting to apply Services")
+    failed=userSvc
+    attempts=0
+    while failed:
+        failed = applyServices(nsx,failed)
+        if failed:
+            print("Not all services applied successfully, retrying the %d failed ones..." % len(failed))
+            attempts+=1
+            if attempts >=5:
+                print("Migration Failed - Services: failed count: %d" %len(failed))
+                print("Services configuration failed for %d configs. # of retries have reached %d, exiting" %(len(failed), attempts))
+                logger.warn("Migration Failed - Services: failed count: %d" %len(failed))
+                logger.error("Services configuration failed for %d configs. # of retries have reached %d, exiting" %(len(failed), attempts))
+            logger.warn("Not all services applied successfully, retrying the %d failed ones..." % len(failed))
 
-    applyAttributes(nsx, customAttributes, reverse=False)
-    applyCtx(nsx, userCtx)
-    applyServices(nsx,userSvc)
-    applyGroups(nsx, groups)
-    applyPolicies(nsx, policies)
 
+    failed = groups
+    while failed:
+        failed = applyGroups(nsx, failed)
+        if failed:
+            attempts+=1
+            if attempts >=5:
+                print("Migration Failed - Groups: failed count: %d" %len(failed))
+                print("Group configuration failed for %d configs. # of retries have reached %d, exiting" %(len(failed), attempts))
+                logger.warn("Migration Failed -  Groups: failed count: %d" %len(failed))
+                logger.error("Group configuration failed for %d configs. # of retries have reached %d, exiting" %(len(failed), attempts))
+            print("Not all groups applied successfully, retrying the %d failed ones..." %len(failed))
+            logger.warn("Not all groups applied successfully, retrying the %d failed ones..." %len(failed))
+    logger.info("Starting to apply Policies")
+    pfailed = applyPolicies(nsx, policies, logger, anchor=args.anchor, position=args.position)
+    if pfailed:
+        print("Migration Failed - Policies: failed count: %d" %pfailed)
+        logger.error("Migration Failed - Policies: failed count: %d" %pfailed)
+        
+
+def newPath(path, prefix):
+    if not prefix:
+        return path
+    npath = path.split("/")
+    npath[-1] = prefix + npath[-1]
+    p  = "/".join(npath)
+    return p
+    
+def addPrefixToSvc(services, prefix):
+    for s in services:
+        s["path"] = newPath(s["path"], prefix)
+        s["id"] = prefix + s["id"]
+        s["display_name"] = prefix + s["display_name"]
+
+        for e in s["service_entries"]:
+            e["id"] = prefix + e["id"]
+            e["display_name"] = prefix + e["display_name"]
+            # delete ro parent to make output less confusing
+            if "path" in e.keys():
+                #e["path"] = newPath(e["path"], prefix)
+                del e["path"]
+            if "parent" in e.keys():
+                del e["parent"]
                 
+        # don't need the children, already in service_entries
+        if "children" in s.keys():
+            del s["children"]
+
+    for s in services:
+        for e in s["service_entries"]:
+            if e["resource_type"] == "NestedServiceServiceEntry":
+                ns = findObject(services, e["nested_service_path"], prefix)
+                if ns:
+                    e["nested_service_path"] = ns["path"]
+    return services
+
+def findObject(groups, oldPath, prefix):
+    npath = newPath(oldPath, prefix)
+    #print("Finding %s with prefix %s, new path: %s" % (oldPath, prefix, npath))
+    for g in groups:
+        if g["path"] == npath:
+            return g
+    return None
+        
+        
+def handleGroupExpression(expression, prefix, groups):
+    '''
+    # these don't  reference any paths
+    if expression["resource_type"] in ["ConjunctionOperator",
+                                       "Condition",
+                                       "ExternalIDExpression",
+                                       "GroupScopeExpression",
+                                       "IPAddressExpression",
+                                       "IdentityGroupExpression",
+                                       "MACAddressExpression"]:
+        return expression
+    '''
+    if expression["resource_type"] == "PathExpression":
+        paths = expression["paths"]
+        for i in range(0, len(expression["paths"])):
+            # only change if it's referring to another group path
+            grp = findObject(groups, expression["paths"][i], prefix)
+            if grp:
+                expression["paths"][i] = grp["path"]
+    elif expression["resource_type"] == "NestedExpression":
+        expression = handleGroupExpression(expression, prefix, groups)
+
+    # Let's clean out any references to path and parent path
+    # in case it causes problems
+    if 'path' in expression.keys():
+        del expression["path"]
+    if 'parent' in expression.keys():
+        del expression["parent"]
+
+    '''
+    # this would be onerous and not needed
+    if prefix:
+        if "display_name" in expression.keys():
+            expression["display_name"] = prefix+expression["display_name"]
+        if "id" in expression.keys():
+            expression["id"] = prefix+expression["id"]
+    '''
+    return expression
+
+def addPrefixToGroups(groups, prefix):
+    # Change all the group paths first
+    for g in groups:
+        g["path"] = newPath(g["path"], prefix)
+        g["id"] = prefix + g["id"]
+        g["display_name"] = prefix + g["display_name"]
+
+    # change any expression references to groups
+    for g in groups:
+        for i in range(0, len(g["expression"])):
+            g["expression"][i] = handleGroupExpression(g["expression"][i],
+                                                       prefix, groups)
+        for i in range(0, len(g["extended_expression"])):
+            g["extended_expression"][i] = handleGroupExpression(g["extended_expression"][i],
+                                                                prefix, groups)
+    return groups
+
+            
+def addPrefixToPolicies(policies, prefix, services, groups, ctx, sequence, renamerules=False):
+    for p in policies:
+        p["path"] = newPath(p["path"], prefix)
+        p["id"] = prefix + p["id"]
+        p["display_name"] = prefix + p["display_name"]
+        # migrate the default-layer3-section as a non default policy
+        if p["sequence_number"] > 999999 and p["id"] == prefix+"default-layer3-section":
+            p["sequence_number"] = sequence + 100
+            print("Changed default layer 3 section sequence to %d" %p["sequence_number"])
+        else:
+            print("Policy: %s: Sequence[: %d, ref: %d" %(p["id"], p["sequence_number"], sequence))
+        if "scope" in p.keys():
+            for i in range(0, len(p["scope"])):
+                nscope = findObject(groups, p["scope"][i], prefix)
+                if nscope:
+                    p["scope"][i] = nscope["path"]
+
+        for c in p["children"]:
+            r = c["Rule"]
+            if renamerules:
+                r["display_name"] = prefix+r["display_name"]
+            r["parent_path"] = p["path"]
+            r["path"] = r["parent_path"] + "/rules/" + r["id"]
+            # we should not have to change the rule ID because the new path
+            # already has the prefix from the policy
+
+            for i in range(0,len(r["source_groups"])):
+                sg = r["source_groups"][i]
+                if sg == "ANY":
+                    continue
+                newg = findObject(groups, sg, prefix)
+                if not newg:
+                    r["source_groups"][i] = sg
+                else:
+                    r["source_groups"][i] = newg["path"]
+                
+            for i in range(0,len(r["destination_groups"])):
+                sg = r["destination_groups"][i]
+                if sg == "ANY":
+                    continue
+                newg = findObject(groups, sg, prefix)
+                if not newg:
+                    r["destination_groups"][i] = sg
+                else:
+                    r["destination_groups"][i] = newg["path"]
+
+            for i in range(0, len(r["services"])):
+                if r["services"][i] == "ANY":
+                    continue
+                nsvc = findObject(services, r["services"][i], prefix)
+                if nsvc:
+                    r["services"][i] = nsvc["path"]
+                    
+            for i in range(0, len(r["profiles"])):
+                if r["profiles"][i] == "ANY":
+                    continue
+                np = findObject(ctx, r["profiles"][i], prefix)
+                if np:
+                    r["profiles"][i] = np["path"]
+
+            if "scope" in r.keys():
+                for i in range(0, len(r["scope"])):
+                    nscope = findObject(groups, r["scope"][i], prefix)
+                    if nscope:
+                        r["scope"][i] = nscope["path"]
+                        
+    return policies
+                                
+def addPrefixToCtx(ctx, prefix):
+    if not prefix:
+        return ctx
+    for c in ctx:
+        c["id"] = prefix+c["id"]
+        c["display_name"] = prefix+c["display_name"]
+        c["path"] = newPath(c["path"], prefix)
+
+    return ctx
+
 def processServices(services):
     matches=[]
     for s in services:
@@ -294,7 +674,7 @@ def processPolicies(policies, groups, services, ctx, args):
             rule=crule["Rule"]
             rdata={"rule": rule, "matches": []}
             rules.append(rdata)
-
+    
             
 if __name__ == "__main__":
     main()

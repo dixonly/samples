@@ -374,7 +374,7 @@ class NsxConnect(requests.Request):
             self.__checkReturnCode(r,codes)
             if verbose:
                 self.logger.info('result code: %d' %r.status_code)
-                return r.text
+            return r
         else:
             if verbose:
                 self.logger.info("API not alled - in safe mode")
