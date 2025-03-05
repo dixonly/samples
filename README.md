@@ -199,6 +199,8 @@ Use cases:
 <code>
 ./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>] --prefix <prefix string> --anchor <name of anchor policy> [--position <insert_before | insert_after]
 
+- Especially when multiple NSX configs into one common target, it may be prudent to pre-set the migrated policies to apply-to only a limited scope.  The addition --apply option will let you specify the name of a group to which ALL of the migrated policies will use for their apply-to configuration.  If the existing apply-to is DFW or ANY, then the specify group will be the only apply-to group.  If there's already one or more apply-to group, the new policy's apply-to list will be extended to incude the specified group.
+
 </code>
 
 3. Undo, i.e. delete, all the migrated policies from the target.  Using the --output file, delete all the migrated Policies, Groups, Services, and Context Profiles from the destination.  This can be done by just adding the "--undo" parameter to any of the above example commands.

@@ -218,7 +218,7 @@ class NsxConnect(requests.Request):
         codes - List of HTTP request status codes for success
         '''
         api=self.normalizeGmLmApi(api)
-        url = self.server+api
+        ourl = self.server+api
         if not trial:
             firstLoop = True
             cursor=None
@@ -226,18 +226,20 @@ class NsxConnect(requests.Request):
             
             while firstLoop or cursor:
                 firstLoop = False
-                if '?' in url:
-                    url = "%s&cursor=%s" %(url, cursor) if cursor else url
+                if '?' in ourl:
+                    url = "%s&cursor=%s" %(ourl, cursor) if cursor else ourl
                 else:
-                    url = "%s?cursor=%s" %(url, cursor) if cursor else url
+                    url = "%s?cursor=%s" %(ourl, cursor) if cursor else ourl
                 if verbose:
                     self.logger.info("API: GET %s" %url)
-                    
+
                 r = self.session.get(url, timeout=self.timeout,
                                      **self.requestAttr)
                 throttle=1
                 while self.__checkApiLimit(r):
                     self.logger.info("API Limit exceeded, sleeping %s seconds and retrying"
+                                     % throttle)
+                    print("API Limit exceeded, sleeping %s seconds and retrying"
                                      % throttle)
                     time.sleep(throttle)
                     r = self.session.get(url, timeout=self.timeout,
@@ -246,7 +248,7 @@ class NsxConnect(requests.Request):
                     
                 self.__checkReturnCode(r, codes)
                 payload = json.loads(r.text)
-                if result:
+                if "results" in result.keys():
                     result["results"].extend(payload["results"])
                 else:
                     result = payload

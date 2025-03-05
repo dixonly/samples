@@ -62,6 +62,8 @@ def parseParameters():
     parser.add_argument("--retries", required=False, default=5, help="# of retries for services and group configs to resolve failures due to order of config for nested dependencies")
     parser.add_argument("--undo", action="store_true",
                         help="Undo the configs stored in --output argument")
+    parser.add_argument("--apply", required=False,
+                        help="Set all the policies to apply to this group at destination")
     args = parser.parse_args()
     return args
 
@@ -287,11 +289,19 @@ def doExport(nsx, filename):
         fp.write(json.dumps(data, indent=3))
         fp.close
     print("Complete")
-    
+
+def findGroup(nsx, name):
+    groups = nsx.get(api="/policy/api/v1/search/query?query=resource_type:Group",
+                     verbose=False, display=False,  codes=[200])
+    for g in groups["results"]:
+        if g["display_name"] == name:
+            return g
+    return None
+
 def main():
     args = parseParameters()
     logger=Logger(args.logfile)
-
+    
     if not args.password:
         args.password=getpass.getpass("NSX Manager %s password: " %args.nsx)
 
@@ -324,7 +334,14 @@ def main():
                     logger.info("Retrying...")
 
         return
-    
+    applytogroup = None
+    if args.apply:
+        print("Finding apply-to group %s" %args.apply)
+        applytogroup = findGroup(nsx, args.apply)
+        if not applytogroup:
+            print("Error - Apply to group %s not found...exiting" %args.apply)
+            log.error("Error - Apply to group %s not found...exiting" %args.apply)
+
     with open(args.file, 'r', newline='') as fp:
         data=json.load(fp)
 
@@ -370,6 +387,11 @@ def main():
                 continue
             elif k["SecurityPolicy"]["sequence_number"] > sequence and k["SecurityPolicy"]["sequence_number"] < 999999:
                 sequence = k["SecurityPolicy"]["sequence_number"]
+            if applytogroup:
+                if "ANY" in k["SecurityPolicy"]["scope"]:
+                    k["SecurityPolicy"]["scope"] = [applytogroup["path"]]
+                else:
+                    k["SecurityPolicy"]["scope"].append(applytogroup["path"])
             policies.append(k["SecurityPolicy"])
         elif k["resource_type"] == "ChildGroup":
             # these are DFW exclusion list,etc
@@ -655,13 +677,6 @@ def compareValues(src, dst, keys):
             return False
     return True
 
-def findGroup(group, groups):
-    for g in groups.keys():
-        if groups[g]["group"]["path"] == group:
-            return groups[g]
-    #raise ValueError("Group %s not found" %group)
-    return None
-    
 def processPolicies(policies, groups, services, ctx, args):
     rules=[]
     total_matches=0
