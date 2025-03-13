@@ -174,8 +174,9 @@ def applyServices(nsx, services):
     if errorCount>0:
         return failed
     else:
+        log.info("All services applied without errors") 
         print("All services applied without errors")
-        return None
+       return None
         
 def applyGroups(nsx, groups):
     errorCount=0
@@ -192,6 +193,7 @@ def applyGroups(nsx, groups):
     if errorCount > 0:
         return failed
     else:
+        log.info("All groups applied without errors")
         print("All groups applied without errors")
         return None
         
@@ -215,8 +217,8 @@ def applyPolicies(nsx, policies, logger, anchor=None, position=None):
                     anchorPolicy=pc
                     break
             if not anchorPolicy:
-                print("Migration failed - Policies - Anchor Policy %s not fund" %anchor)
-                logger.warn("Migration failed - Policies - Anchor Policy %s not fund" %anchor)
+                print("Migration failed - Policies - Anchor Policy %s not found" %anchor)
+                logger.warn("Migration failed - Policies - Anchor Policy %s not found" %anchor)
                 failed+=1
                 return failed
             
@@ -262,7 +264,10 @@ def applyPolicies(nsx, policies, logger, anchor=None, position=None):
                     logger.warn("    " + r.text)
                     failed+=1
                 firstPolicy = currentPolicy
-    return failed
+    if failed == 0:
+        logger.info("All polices migrated successfully")
+         print("All policies migrated successfully")
+   return failed
 
 def Undo(nsx, configs, logger, retries):
     flow = ["rules", "groups", "services", "ctx"]

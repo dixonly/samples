@@ -141,11 +141,15 @@
   printed on screen.  Because configuration is performed sequentially,
   there may be some configurations that reference other ones
   that haven't been submitted yet.  For example, a Group could
-  be referencing an as-yet to be configured IPSET.  If any
-  errors are referencing invalid or missing configs, just 
-  re-run the script again with the same input again.  All the
-  configurations are configured using REST PATCH APIs and
-  idempotent.  
+  be referencing an as-yet to be configured IPSET.  These types
+  of nested depedencies should only apply to nested services and
+  nested groups.  For such cases, the script will retry up to 
+  5 times - meaning that we expect any sequence dependencies due
+  to nesting to be completed after 5 tries.  You can also specify
+  a different number of retries with the --retries parameter. Should
+  there be such errors even after that many retries, re-run the script 
+  again with the same input again.  All the configurations are 
+  configured using REST PATCH APIs and idempotent.  
 
   <code>
 usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--export] [--prefix PREFIX] [--prefixrules] [--anchor ANCHOR] [--position {insert_before,insert_after}]
