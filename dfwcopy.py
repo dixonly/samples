@@ -176,7 +176,7 @@ def applyServices(nsx, services):
     else:
         log.info("All services applied without errors") 
         print("All services applied without errors")
-       return None
+        return None
         
 def applyGroups(nsx, groups):
     errorCount=0
@@ -266,8 +266,8 @@ def applyPolicies(nsx, policies, logger, anchor=None, position=None):
                 firstPolicy = currentPolicy
     if failed == 0:
         logger.info("All polices migrated successfully")
-         print("All policies migrated successfully")
-   return failed
+        print("All policies migrated successfully")
+    return failed
 
 def Undo(nsx, configs, logger, retries):
     flow = ["rules", "groups", "services", "ctx"]
