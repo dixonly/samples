@@ -64,6 +64,8 @@ def parseParameters():
                         help="Undo the configs stored in --output argument")
     parser.add_argument("--apply", required=False,
                         help="Set all the policies to apply to this group at destination")
+    parser.add_argument("--gm", required=False, action="store_true",
+                        help="Target is Federation GM instead of local NSX Manager")
     args = parser.parse_args()
     return args
 
@@ -310,7 +312,7 @@ def main():
     if not args.password:
         args.password=getpass.getpass("NSX Manager %s password: " %args.nsx)
 
-    nsx = NsxConnect(server=args.nsx, logger=logger, user=args.user, password=args.password)
+    nsx = NsxConnect(server=args.nsx, logger=logger, user=args.user, password=args.password, global_gm=args.gm)
 
     if args.export:
         doExport(nsx, args.file)

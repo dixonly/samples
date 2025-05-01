@@ -151,6 +151,9 @@
   again with the same input again.  All the configurations are 
   configured using REST PATCH APIs and idempotent.  
 
+  Added the --gm to support talking to a Federation GM - note that
+  I've only tested this with the --export option.
+
   <code>
 usage: dfwcopy.py [-h] --nsx NSX --user USER [--password PASSWORD] --file FILE [--export] [--prefix PREFIX] [--prefixrules] [--anchor ANCHOR] [--position {insert_before,insert_after}]
                   [--output OUTPUT] [--logfile LOGFILE] [--retries RETRIES] [--undo] [--apply APPLY]
@@ -172,6 +175,7 @@ optional arguments:
   --retries RETRIES     # of retries for services and group configs to resolve failures due to order of config for nested dependencies
   --undo                Undo the configs stored in --output argument
   --apply APPLY         Set all the policies to apply to this group at destination
+  --gm                  Target is Federation GM instead of local NSX Manager
   </code>
 
   
