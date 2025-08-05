@@ -151,6 +151,11 @@
   again with the same input again.  All the configurations are 
   configured using REST PATCH APIs and idempotent.  
 
+  Caveat: the export does not export custom URL or domain names.
+  As such, these are reconstructed from the context profiles that
+  actually use these URL or domain names.  Therefore, only the 
+  custom URL or domain names that are used will be migrated.
+
   Added the --gm to support talking to a Federation GM - note that
   I've only tested this with the --export option.
 

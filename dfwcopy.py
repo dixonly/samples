@@ -102,52 +102,59 @@ def processService(svc):
 
 def applyAttributes(nsx, attributes,reverse=False):
     print("Updating custom attribute values for context profiles")
-    customAtt=[]
+    customUrl = {"key": "CUSTOM_URL", "value": [], "datatype": "STRING"}
+    domains = {"key": "DOMAIN_NAME", "value": [], "datatype": "STRING"}
     results = nsx.get(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
-                        verbose=False, codes=[200])
+                      verbose=False, codes=[200])
     failed=0
     for r in results["results"]:
         if "attributes" in r.keys():
-            customAtt.extend(r["attributes"])
-        else:
-            customAtt = attributes
-            for c in customAtt:
-                r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
-                              data=c,
-                              verbose=True,
-                              codes=[200])
-                if r.status_code != 200:
-                    print("   ***ERROR: code %d" %r.status_code)
-                    print("    " + r.text)
-                    failed+=1
-            return failed
-                             
+            for a in r["attributes"]:
+                if a["key"] == "CUSTOM_URL":
+                    customUrl["value"].extend(a["value"])
+                elif a["key"] == "DOMAIN_NAME":
+                    domains["value"].extend(a["value"])
+
+    uchanged=False
+    dchanged=False
     for a in attributes:
-        for c in customAtt:
-            changed = False
-            if c["key"] == a["key"]:
-                for v in a["value"]:
+        if a["key"] == "CUSTOM_URL":
+            for c in a["value"]:
+                if c in customUrl["value"]:
                     if reverse:
-                        if v in c["value"]:
-                            c["value"].remove(v)
-                            changed=True
-                    else:
-                        if v not in c["value"]:
-                            c["value"].append(v)
-                            changed=True
-            
-            else:
-                c = a
-                changed=True
-            if changed:
-                r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
-                              data=c,
-                              verbose=True,
-                              codes=[200])
-                if r.status_code != 200:
-                    print("   ***ERROR: code %d" %r.status_code)
-                    print("    " + r.text)
-                    failed+=1
+                        customUrl["value"].remove(c)
+                        uchanged=True
+                else:
+                    customUrl["value"].append(c)
+                    uchanged=True
+        elif a["key"] == "DOMAIN_NAME":
+            for c in a["value"]:
+                if c in domains["value"]:
+                    if reverse:
+                        domains["value"].remove(c)
+                        dchanged=True
+                else:
+                    domains["value"].append(c)
+                    dchanged=True
+
+    if uchanged or not uchanged:
+        r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
+            data=customUrl,
+            verbose=True,
+            codes=[200])
+        if r.status_code != 200:
+            print("   ***ERROR: code %d" %r.status_code)
+            print("    " + r.text)
+            failed+=1
+    if dchanged or not dchanged:
+        r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
+            data=domains,
+            verbose=True,
+            codes=[200])
+        if r.status_code != 200:
+            print("   ***ERROR: code %d" %r.status_code)
+            print("    " + r.text)
+            failed+=1
     return failed
 
 def applyCtx(nsx, ctx):
@@ -176,7 +183,6 @@ def applyServices(nsx, services):
     if errorCount>0:
         return failed
     else:
-        log.info("All services applied without errors") 
         print("All services applied without errors")
         return None
         
@@ -195,7 +201,6 @@ def applyGroups(nsx, groups):
     if errorCount > 0:
         return failed
     else:
-        log.info("All groups applied without errors")
         print("All groups applied without errors")
         return None
         
