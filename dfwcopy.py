@@ -10,7 +10,6 @@ from operator import itemgetter
 from utils.nsxconnect import NsxConnect
 import getpass
 from utils.logger import Logger
-
 #
 # The input file is taken return from GET /policy/api/v1/infra?filter=Type-Domain%7CGroup%7CService%7CPolicyContextProfile%7CSecurityPolicy%7CRule
 # Note that I've only tested this against Local Manager without Federation or Projects/VPCs.
@@ -104,19 +103,31 @@ def applyAttributes(nsx, attributes,reverse=False):
     print("Updating custom attribute values for context profiles")
     customUrl = {"key": "CUSTOM_URL", "value": [], "datatype": "STRING"}
     domains = {"key": "DOMAIN_NAME", "value": [], "datatype": "STRING"}
+    failed=0
+
+    targetDomainResults = nsx.get(api="/policy/api/v1/search/query?query=(resource_type:PolicyContextProfileCustomAttribute AND key:DOMAIN_NAME)", verbose=False, codes=[200])
+    targetDomains=[]
+    for i in targetDomainResults["results"]:
+        targetDomains.append(i["value"])
+
     results = nsx.get(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
                       verbose=False, codes=[200])
-    failed=0
+
+
+    #Keep custom entries that are already in target
+    uchanged=False
+    dchanged=False
     for r in results["results"]:
         if "attributes" in r.keys():
             for a in r["attributes"]:
                 if a["key"] == "CUSTOM_URL":
                     customUrl["value"].extend(a["value"])
+                    uchanged=True
                 elif a["key"] == "DOMAIN_NAME":
-                    domains["value"].extend(a["value"])
-
-    uchanged=False
-    dchanged=False
+                    if a["value"] not in targetDomains:
+                        domains["value"].extend(a["value"])
+                        dchanged=True
+    
     for a in attributes:
         if a["key"] == "CUSTOM_URL":
             for c in a["value"]:
@@ -133,11 +144,12 @@ def applyAttributes(nsx, attributes,reverse=False):
                     if reverse:
                         domains["value"].remove(c)
                         dchanged=True
-                else:
+                elif c not in targetDomains:
                     domains["value"].append(c)
                     dchanged=True
 
-    if uchanged or not uchanged:
+    if uchanged:
+        print("Updating custom URL attributes")
         r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
             data=customUrl,
             verbose=True,
@@ -146,7 +158,8 @@ def applyAttributes(nsx, attributes,reverse=False):
             print("   ***ERROR: code %d" %r.status_code)
             print("    " + r.text)
             failed+=1
-    if dchanged or not dchanged:
+    if dchanged:
+        print("Updating custom domain attributes")
         r = nsx.patch(api="/policy/api/v1/infra/context-profiles/custom-attributes/default",
             data=domains,
             verbose=True,
@@ -548,7 +561,11 @@ def handleGroupExpression(expression, prefix, groups):
             if grp:
                 expression["paths"][i] = grp["path"]
     elif expression["resource_type"] == "NestedExpression":
-        expression = handleGroupExpression(expression, prefix, groups)
+        for n in range(0, len(expression["expressions"])):
+            expression["expressions"][n] = handleGroupExpression(expression["expressions"][n],
+                                                                 prefix, groups)
+            
+        #expression = handleGroupExpression(expression["expressions"], prefix, groups)
 
     # Let's clean out any references to path and parent path
     # in case it causes problems

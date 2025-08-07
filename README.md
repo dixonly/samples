@@ -187,28 +187,28 @@ optional arguments:
 Use cases:
 1. Export the security and related configs from an NSX Manager
 <code>
-./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <output filename> --export
+./dfwcopy.py --nsx \<NSX Manager\> --user \<NSX User\> [--password \<user password\>] --file \<output filename\> --export
 </code>
 
 2. Migrate exported configs to a target NSX Manager
 
 - Migrate as is - all names, path IDs, and sequences will be retained.  This will merge the configs into the target, and may update or overwrite any previously existing configs on the target that have the same ID & path.
 <code>
-./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>]
+./dfwcopy.py --nsx \<NSX Manager\> --user \<NSX User\> [--password \<user password\>] --file \<input filename\> [--output <output file to store all parsed and migrated configs>] [--logfile \<logfile name to store all migrate results\>]
 
 </code>
 
 - Prefix all the configs and then migrate to a target NSX Manager.  This will add a prefix to all the config names, IDs, and paths.  When prefix is provided, the migration will update all the sequence numbers of the Policies - the ordering will be maintained.
 
 <code>
-./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>] --prefix <prefix string>
+./dfwcopy.py --nsx \<NSX Manager\> --user \<NSX User\> [--password \<user password\>] --file \<input filename\> [--output \<output file to store all parsed and migrated configs\>] [--logfile \<logfile name to store all migrate results\>] --prefix \<prefix string\>
 
 </code>
 
 - Migrate all the configs to a target NSX Manager and position the migrated policies before or afer a specified anchor policy.  You can create a new empty anchor policy or use an pre-existing policy.  If the position is not specified, the default behavior is to migrate to before the anchor policy.
 
 <code>
-./dfwcopy.py --nsx <NSX Manager> --user <NSX User> [--password <user password>] --file <input filename> [--output <output file to store all parsed and migrated configs>] [--logfile <logfile name to store all migrate results>] --prefix <prefix string> --anchor <name of anchor policy> [--position <insert_before | insert_after]
+./dfwcopy.py --nsx \<NSX Manager\> --user \<NSX User\> [--password \<user password\>] --file \<input filename\> [--output \<output file to store all parsed and migrated configs\>] [--logfile \<logfile name to store all migrate results\>] --prefix \<prefix string\> --anchor \<name of anchor policy\> [--position \<insert_before | insert_after\>]
 </code>
 
 - Especially when multiple NSX configs into one common target, it may be prudent to pre-set the migrated policies to apply-to only a limited scope.  The addition --apply option will let you specify the name of a group to which ALL of the migrated policies will use for their apply-to configuration.  If the existing apply-to is DFW or ANY, then the specify group will be the only apply-to group.  If there's already one or more apply-to group, the new policy's apply-to list will be extended to incude the specified group.
